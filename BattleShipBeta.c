@@ -4,64 +4,106 @@
 #include <stdlib.h>                 //this is needed for the random function so we can guarantee that the whoever gets first serve is random
 #include <time.h>                   /*this is also needed to set a random seed for the random function, 
                                      this is so we dont get the same sequence of random numbers each time*/
+void getDifficulity(char difficulity[2]);
+void getPlayerInfo(char name[16],int i);
+int getRandomTurn();
 void displayBattleField(int battlefield[10][10], char difficulty);
 void fillAray(int battleField[10][10]);
 void updateBattleField(int battlefield[10][10], char input[],char orientation,int lengthOfCarrier);
 void toUpperCase(char positions[4][3]);
 void getPositions(char positions[4][3],char * arsenal[4],int battleGround[10][10]);
 void toUpperPosition(char input[]);
+void makeMove(int battlefield[10][10],int *numberOfShips);
 _Bool checkInputValidity(char input []);
 _Bool checkPositionValidity(char input [],int lengthOfCaerrier,int BattleGround[10][10],char orientation);
+void clearScreen() 
+{
+#ifdef _WIN32
+    system("cls");   // For Windows
+#else
+    system("clear"); // For Linux/MacOS
+#endif
+}
 int main()
 {
     int BattleGroundPlayer1[10][10];
     int BattleGroundPlayer2[10][10];
     fillAray(BattleGroundPlayer1);
     fillAray(BattleGroundPlayer2);
-    char difficulty[2];  
-    int c;                                  //this matter later to clear the buffer
-    printf("Please enter a tracking difficulty level: easy (e) or hard (h): ");
-    scanf("%s",difficulty);
-    while ((c = getchar()) != '\n' && c != EOF); //this is to clear the buffer otherwise it will repeat the message twice everytime (i took this from stack overflow because i could figure out what was going wrong but this seems to have fixed it)
-    while (strlen(difficulty) > 1 || difficulty[0] != 'e' && difficulty [0] != 'h' && difficulty[0]!='E' && difficulty[0]!='H') {
-        printf("The input you entered is invalid, please enter (e) for easy or (h) for hard: ");
-        scanf("%s",difficulty);
-        while ((c = getchar()) != '\n' && c != EOF); //this is to clear the buffer otherwise it will repeat the message twice everytime (i took this from stack overflow because i could figure out what was going wrong but this seems to have fixed it)
-    }
-
-    printf("Player 1 please enter your username: ");
-    char Player1[16];                              //made the player name 15 characters long at most but we can change it however we like
-    scanf("%s",Player1);
-    while ((c = getchar()) != '\n' && c != EOF);
-    printf("Player 2 please enter your username: ");
-    char Player2[16];
-    scanf("%s",Player2);
-    while ((c = getchar()) != '\n' && c != EOF);
-
-    srand(time(NULL));                              //this function allows us to set the a different seed for the random number each time our program runs so we don't have the same sequence of random numbers everytime we run our code
-    int random = rand() % 2 ;                    //%2 gives either 0 or 1 which would guarantee a 50/50 chance for each player 
-    printf("Player %i will go first.\n",random+1);
+    char difficulity[2];  
+    getDifficulity(difficulity);
+    clearScreen();
+    int c;
+    char PlayerOneName [16];
+    char PlayerTwoName [16];
+    getPlayerInfo(PlayerOneName,1);
+    getPlayerInfo(PlayerTwoName,2);
+    clearScreen();
+    int currentPlayer = getRandomTurn();
     char* arsenal[] = {"carrier","battleship","destroyer","submarine"};
     char positions1 [4][3];
     char positions2 [4][3];
     getPositions(positions1,arsenal,BattleGroundPlayer1);
+    clearScreen();
     getPositions(positions2,arsenal,BattleGroundPlayer2);
     toUpperCase(positions1);
     toUpperCase(positions2);
-    for (int i = 0; i < 10; i++) {
-        for (int j = 0; j < 10; j++) {
-            printf("%d ", BattleGroundPlayer1[i][j]);
+    int numberOfShipsPlayer1 = 4;
+    int numberOfshipsPlayer2 = 4;
+    do
+    {
+        if(currentPlayer == 1)
+        {
+            printf("Player 1's turn:\n");
+            displayBattleField(BattleGroundPlayer1,difficulity[0]);
+            makeMove(BattleGroundPlayer2,&numberOfshipsPlayer2);
+            currentPlayer = 2;
         }
-        printf("\n");
+        else
+        {
+            printf("Player 2's turn:\n");
+            displayBattleField(BattleGroundPlayer2,difficulity[0]);
+            makeMove(BattleGroundPlayer1,&numberOfShipsPlayer1);
+            currentPlayer = 1;
+        }
+    } 
+    while (numberOfShipsPlayer1 !=0 && numberOfshipsPlayer2 !=0);
+    printf("Game Over!");
+    if(numberOfShipsPlayer1 == 0)
+    {
+        printf("Player 2 is the winner");
     }
-    printf("\n");
-    for (int i = 0; i < 10; i++) {
-        for (int j = 0; j < 10; j++) {
-            printf("%d ", BattleGroundPlayer2[i][j]);
-        }
-        printf("\n");
+    else 
+    {
+        printf("Player 1 is the winner");
     }
     
+}
+void getDifficulity(char difficulity[2])
+{
+    int c;                                  //this matter later to clear the buffer
+    printf("Please enter a tracking difficulty level: easy (e) or hard (h): ");
+    scanf("%s",difficulity);
+    while ((c = getchar()) != '\n' && c != EOF); //this is to clear the buffer otherwise it will repeat the message twice everytime (i took this from stack overflow because i could figure out what was going wrong but this seems to have fixed it)
+    while (strlen(difficulity) > 1 || difficulity[0] != 'e' && difficulity [0] != 'h' && difficulity[0]!='E' && difficulity[0]!='H') {
+        printf("The input you entered is invalid, please enter (e) for easy or (h) for hard: ");
+        scanf("%s",difficulity);
+        while ((c = getchar()) != '\n' && c != EOF); //this is to clear the buffer otherwise it will repeat the message twice everytime (i took this from stack overflow because i could figure out what was going wrong but this seems to have fixed it)
+    }
+}
+void getPlayerInfo(char Player [16],int i)
+{
+    int c;
+    printf("Player %d please enter your username: ",i);
+    scanf("%s",Player);
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+int getRandomTurn()
+{
+    srand(time(NULL));                              //this function allows us to set the a different seed for the random number each time our program runs so we don't have the same sequence of random numbers everytime we run our code
+    int random = rand() % 2 ;                    //%2 gives either 0 or 1 which would guarantee a 50/50 chance for each player 
+    printf("Player %i will go first.\n",random+1);
+    return random;
 }
 /*this fillArray method fills in all the array spaces with 0, the reason i didn't
  initialize the first element to 0 and let the rest of the array get filled automatically is 
@@ -89,17 +131,17 @@ void displayBattleField(int battlefield[10][10], char difficulty)
         index++;
         for(int j = 0 ; j < 10;j++)
         {
-            if(battlefield[i][j] == 0)
+            if(battlefield[i][j] == 0 || battlefield[i][j] == 1)        // 0 or 1 means we didnt shoot in that position yet
             {
-                printf("~  ");
+                printf("~  ");              
             }
             else
             {
                 if(difficulty == 'e' || difficulty == 'E')                   //as stated in the given instructions, diffirent dificulities print different stuff hence why i had to take 2 cases
                 {
-                    if (battlefield[i][j] == 1)         // 1 means we got a hit
-                    {                                   // 0 means we didnt shoot in that position yet
-                        printf("*  ");                  // 2 (didnt actually hard code it just put else) means we shot there but didnt hit anything 
+                    if (battlefield[i][j] == 2)         
+                    {                                   // 2 means hit
+                        printf("*  ");                  // 3 (didnt actually hard code it just put else) means we shot there but didnt hit anything 
                     }
                     else 
                     {
@@ -108,7 +150,7 @@ void displayBattleField(int battlefield[10][10], char difficulty)
                 }
                 else
                 {
-                    if (battlefield[i][j] == 1)
+                    if (battlefield[i][j] == 2)
                     {
                         printf("*  ");                     //we hit something
                     }
@@ -139,6 +181,32 @@ void toUpperPosition(char input[])
     {
         input[i] = toupper((unsigned char)input[i]);
     }
+}
+void makeMove(int battlefield[10][10],int* numberOfShips)
+{
+    char xchar;
+    int y;
+    printf("Enter coordinates (A-J, 1-10): ");
+    scanf("%c %d", &xchar, &y);
+    xchar = toupper(xchar);
+    int x = xchar - 'A';
+    y = y-1;
+    if (x < 0 || x > 9 || y < 0 || y > 9) {
+        printf("Invalid input. Please enter a letter from A-J and a number from 1-10.\n");
+        return; 
+    }
+    if(battlefield[x][y]== 1)
+    {
+        printf("Hit!\n");
+        battlefield[x][y] = 2;
+        numberOfShips--;
+    }
+    else
+    {
+        printf("Miss!\n");
+        battlefield[x][y] = 3;
+    }
+    clearScreen();
 }
 void getPositions(char positions[4][3],char * arsenal[],int battleGround[10][10])
 {
