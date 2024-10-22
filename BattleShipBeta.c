@@ -28,36 +28,36 @@ int main()
 {
     int BattleGroundPlayer1[10][10];
     int BattleGroundPlayer2[10][10];
-    fillAray(BattleGroundPlayer1);
+    fillAray(BattleGroundPlayer1);                                  //FILLING THE ARRAYS WITH 0
     fillAray(BattleGroundPlayer2);
     char difficulity[2];  
-    getDifficulity(difficulity);
-    clearScreen();
+    getDifficulity(difficulity);                                        //GETTING DIFFICULITY
+    clearScreen();  
     int c;
     char PlayerOneName [16];
     char PlayerTwoName [16];
-    getPlayerInfo(PlayerOneName,1);
+    getPlayerInfo(PlayerOneName,1);                                         //getting names
     getPlayerInfo(PlayerTwoName,2);
     clearScreen();
     int currentPlayer = getRandomTurn();
     char* arsenal[] = {"carrier","battleship","destroyer","submarine"};
     char positions1 [4][3];
     char positions2 [4][3];
-    getPositions(positions1,arsenal,BattleGroundPlayer1);
+    getPositions(positions1,arsenal,BattleGroundPlayer1);                       //gettings positions
     clearScreen();
     getPositions(positions2,arsenal,BattleGroundPlayer2);
-    toUpperCase(positions1);
+    toUpperCase(positions1);                                                    //making positions in upper case in order to make it easier for us to update array
     toUpperCase(positions2);
     int numberOfShipsPlayer1 = 4;
     int numberOfshipsPlayer2 = 4;
-    do
+    do                                                                      //this needs some fine tuning when we implement our own methods i believe
     {
         if(currentPlayer == 1)
         {
             printf("Player 1's turn:\n");
             displayBattleField(BattleGroundPlayer1,difficulity[0]);
-            makeMove(BattleGroundPlayer2,&numberOfshipsPlayer2);
-            currentPlayer = 2;
+            makeMove(BattleGroundPlayer2,&numberOfshipsPlayer2);                                    
+            currentPlayer = 2;                                                              
         }
         else
         {
@@ -175,99 +175,101 @@ void toUpperCase(char position[4][3])                   //this is to convert the
         }
     }
 }
-void toUpperPosition(char input[])
+void toUpperPosition(char input[])                          //this is a method to turn string into uppercase since there is no default way to do this as far as i am aware
 {
     for(int i = 0 ; i < input[i] != '\0';i++)
     {
         input[i] = toupper((unsigned char)input[i]);
     }
 }
-void makeMove(int battlefield[10][10],int* numberOfShips)
-{
-    char xchar;
-    int y;
-    printf("Enter coordinates (A-J, 1-10): ");
-    scanf("%c %d", &xchar, &y);
-    xchar = toupper(xchar);
+void makeMove(int battlefield[10][10],int* numberOfShips)               //this is a method that will be responsibly for making moves,
+{                                                                       // in the future, this method shall be updated with if statements 
+    char xchar;                                                         //we have to check for the inputted ability
+    int y;                                                              //i.e: we check which ability is used and then we call it here
+    printf("Enter coordinates (A-J, 1-10): ");                          //so we implement different methods for each ability and we just call them here
+    scanf("%c %d", &xchar, &y);                                         //note: right now the written code is the one for the normal fire ability
+    xchar = toupper(xchar);                                             // i shall soon make its own method for it and fix/ improve the firing
     int x = xchar - 'A';
     y = y-1;
     if (x < 0 || x > 9 || y < 0 || y > 9) {
         printf("Invalid input. Please enter a letter from A-J and a number from 1-10.\n");
-        return; 
+        return;                                                        //check the move for any illegal arguments
     }
     if(battlefield[x][y]== 1)
     {
         printf("Hit!\n");
-        battlefield[x][y] = 2;
-        numberOfShips--;
-    }
-    else
-    {
-        printf("Miss!\n");
+        battlefield[x][y] = 2;                                          //VERY IMPORTANT NOTE: FOR WHEN WE DO THE FIRE METHOD (IF I (ALI)DOESNT DO IT SOON)
+        numberOfShips--;                                                //THIS METHOD DOESNT CHECK FOR COLLISIONS, IN OTHER WORDS: WE COULD HIT THE SAME
+    }                                                                   // CARRIER EACH TIME AND IT WILL COUNT DOWN EACH TIME
+    else                                                                // BE VERY AWAREEEEEE
+    {                                                                   // AND ALSO APPLY COLLISION CHECKING IN YOUR METHODS FOR WHOEVER I DOING A
+        printf("Miss!\n");                                              // METHOD THAT HAS FIRING IN IT!!!!!
         battlefield[x][y] = 3;
     }
     clearScreen();
 }
-void getPositions(char positions[4][3],char * arsenal[],int battleGround[10][10])
+void getPositions(char positions[4][3],char * arsenal[],int battleGround[10][10])               //method to get positions from user and update the battlefield with the coordinates
 {
-    int carriersLength [] = {5,4,3,2};
-    int c;
+    int carriersLength [] = {5,4,3,2};                                      //self explanatory, so we can know the length of each carrier
+    int c;  
     for(int i = 0 ; i  < 4;i++)
     {
-        char orientation;
+        char orientation;                                                   //V/H
         int validInput = 0;
-        while (!validInput) {
+        while (!validInput) {                                               //so we can detect any illegal arguments passed by the user
             printf("Please enter the position of your %s.\n", arsenal[i]);
             scanf("%3s", positions[i]);
-            toUpperPosition(positions[i]);
+            toUpperPosition(positions[i]);                                     // make this easier for us to update the battlefield later
             while ((c = getchar()) != '\n' && c != EOF); 
-            if (checkInputValidity(positions[i]) == 0)
+            if (checkInputValidity(positions[i]) == 0)                         //this is to check if the input entered is the correct format or not
             {
                 printf("The input you entered is invalid. Please enter a character between A and J and a number between 1 and 10.\n");
                 continue; 
             }
-            printf("what orientation? H/V\n");
+            printf("what orientation? H/V\n");                                 //getting the orientation
             scanf("%c", &orientation);
-            orientation = toupper(orientation);
-            if(orientation!='H'&& orientation!='V')
+            orientation = toupper(orientation);                                //it's one letter thats why i didnt use toupperposition
+            if(orientation!='H'&& orientation!='V')                             //validity checks
             {
-                printf("wrong input, please try again and enter a valid input\n");
+                printf("wrong input, please try again and enter a valid input\n");      
                 continue;
             }
-            if (checkPositionValidity(positions[i], carriersLength[i], battleGround, orientation) == 0) {
+            if (checkPositionValidity(positions[i], carriersLength[i], battleGround, orientation) == 0) {       //this is to check if the entered position is taken,goes out of bound...etc
                 printf("Another carrier exists in these coordinates, or the position is invalid. Please enter valid ones.\n");
                 continue;
             }
             validInput = 1;
         }
-        updateBattleField(battleGround, positions[i], orientation , carriersLength[i]);
-        for (int i = 0; i < 10; i++) {
-        for (int j = 0; j < 10; j++) {
-            printf("%d ", battleGround[i][j]);
+        updateBattleField(battleGround, positions[i], orientation , carriersLength[i]);             //once all checks are done we update
+        for (int i = 0; i < 10; i++) 
+        {
+        for (int j = 0; j < 10; j++) 
+        {
+            printf("%d ", battleGround[i][j]);                                                          //print the battlefield after each insertion
         }
         printf("\n");
     }
     }
 
 }
-_Bool checkInputValidity(char input [])
+_Bool checkInputValidity(char input [])                                                         //so we can check if the position inputed is in the correct format
 {
-    if(strlen(input) < 2 || strlen(input) > 3)
+    if(strlen(input) < 2 || strlen(input) > 3)                                                  //checking for length, less than 2 means if only A or 1... more than 3 is for sdhjah for example
     {
         return 0;
     }
-    if(strlen(input)==2)
+    if(strlen(input)==2)                                                                //if it is from A-J and 1-9 only(2 characters long)
     {
         if(input[0] <'A' || input[0] > 'J')
     {
         return 0;
     }
-    else if ( input[1] - '0' < 1 ||  input[1] - '0' > 9)
+    else if ( input[1] - '0' < 1 ||  input[1] - '0' > 9)                    
     {
         return 0;
     }
     }
-    else if(strlen(input)==3)
+    else if(strlen(input)==3)                                                              // if it is from A-J and 10
     {
           if(input[0] <'A' || input[0] > 'J')
     {
@@ -280,20 +282,20 @@ _Bool checkInputValidity(char input [])
     }
     return 1;
 }
-_Bool checkPositionValidity(char input [],int lengthOfCarrier,int BattleGround[10][10],char orientation)
+_Bool checkPositionValidity(char input [],int lengthOfCarrier,int BattleGround[10][10],char orientation)            //after checking the input, we check if the position inputted is correct or not
 {   
     int valid = 0;
     int x = input[0] - 'A';
     int y;
     if(strlen(input)==2)
     {
-        y = input[1]-'1';
-    }
-    else if(strlen(input)==3)
-    {
+        y = input[1]-'1';                           //you may wonder why the 2 and 3 and u are correct
+    }                                               //if it was made of 2 then it is in the form A0 for example
+    else if(strlen(input)==3)                       // we can then directly get Y, but if it was 3 characters long, then it would be more of a hassle
+    {                                               // to get y so it is better for us to hardcode
         y = 9;
     }
-    if(x<0 || x >= 10 || y < 0 || y >=10)
+    if(x<0 || x >= 10 || y < 0 || y >=10)           //check for out of bounds inputs
     {
         if (x < 0 || x >= 10 || y < 0 || y >= 10) {
         printf("Starting position out of bounds.\n");
@@ -307,10 +309,10 @@ _Bool checkPositionValidity(char input [],int lengthOfCarrier,int BattleGround[1
         {
             if(y >=10)
             {
-                printf("Ship goes out of bounds vertically.\n");
+                printf("Ship goes out of bounds vertically.\n");                    //if the ship goes out of bounds even though its first position is in bounds
                 return 0;
             }
-            if(BattleGround[i][x]==0)
+            if(BattleGround[i][x]==0)                                               //if it wasnt 0, then other ship exists there and the position is not available
             {
                 valid = 1;
             }
@@ -326,10 +328,10 @@ _Bool checkPositionValidity(char input [],int lengthOfCarrier,int BattleGround[1
         {
             if(x >=10)
             {
-                printf("Ship goes out of bounds horizontally.\n");
-                return 0;
+                printf("Ship goes out of bounds horizontally.\n");                   //if the ship goes out of bounds even though its first position is in bounds
+                return 0;   
             }
-            if(BattleGround[y][i]==0)
+            if(BattleGround[y][i]==0)                                               //if it wasnt 0, then other ship exists there and the position is not available
             {
                 valid = 1;
             }
@@ -341,20 +343,20 @@ _Bool checkPositionValidity(char input [],int lengthOfCarrier,int BattleGround[1
     }
     return valid;
 }
-void updateBattleField(int battlefield[10][10], char input[],char orientation,int lengthOfCarrier)
+void updateBattleField(int battlefield[10][10], char input[],char orientation,int lengthOfCarrier)              //Updating the battlefield after positions are entered
 {   
     int x = input[0] - 'A';
     int y;
-    if(strlen(input)==2)
+    if(strlen(input)==2)                                               //to get Y, this is the same tactic used in the get positions method
     {
         y = input[1]-'1';
     }
-    else if(strlen(input)==3)
+    else if(strlen(input)==3)                                           
     {
         y = 9;
     }
-    if (orientation == 'V')
-    {
+    if (orientation == 'V')                                     //very simple updating vertically/horizontally using length of the carriers
+    {                                                           
         for(int i = y; i < y + lengthOfCarrier ;i++)
         {
             battlefield[i][x]=1;
