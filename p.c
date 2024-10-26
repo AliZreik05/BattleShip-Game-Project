@@ -440,6 +440,7 @@ void makeMove(Player *p)
 }
 
 void performRadarSweep(Player *p, int x, int y) // this is the code i was responsonsible for the radar sweep. it checks for ships in the range as instructed
+// a 2x2 range and no more than 3.
 {
     Player *PlayerAttacking=(strcmp(p->name,player1.name)==0)?&player2:&player1;
     //this is important as we need to check the number of radar sweeps remaining 
