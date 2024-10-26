@@ -17,6 +17,8 @@ struct player
     int hitAShipInPreviousTurn;
     int radar_sweeps;
     int smoke_screen;
+    bool torpedoUnlocked;
+    bool torpedoAlreadyUnlocked;
     // int score; we can implement this one later when the game can be played more than once
 };
 
@@ -41,6 +43,7 @@ void makeMove(Player *p);
 void performRadarSweep(Player *p, int x, int y);
 char setGameDifficulty();
 void toUpper1(char input[]); // toUpper1 makes a char[] to uppercase (a string)
+void Torpedo(Player *p, int z, bool isRow);
 void updateBattleField(char battlefield[10][10], char position[], char orientation, int lengthOfCarrier, int numberAssociated);
 
 int main()
@@ -86,7 +89,7 @@ int main()
     return 0;
 }
 
-//Functions:
+// Functions:
 bool checkInputValidity(char input[]) // so we can check if the position inputed is in the correct format
 {
     if (strlen(input) < 2 || strlen(input) > 3) // checking for length, because it should be minimum 2 and max 3 (examples for wrong input:A,2,6,AB5)
@@ -169,23 +172,38 @@ bool checkPositionValidity(char input[], int lengthOfCarrier, char BattleGround[
 
 void checkForDestroyedShips(Player *p)
 {
-     p->numberOfShips = 0;
+    p->numberOfShips = 0;
 
     // Check for remaining ships
-    for (int m = 1; m <= 4; m++) { //  ship identifiers are 1 to 4
+    for (int m = 1; m <= 4; m++)
+    { //  ship identifiers are 1 to 4
         bool shipStillExists = false;
 
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10; j++) {
-                if (p->BattleGround[i][j] == m) {
+        for (int i = 0; i < 10; i++)
+        {
+            for (int j = 0; j < 10; j++)
+            {
+                if (p->BattleGround[i][j] == m)
+                {
                     shipStillExists = true; // If we find any part of the ship, mark it as existing
                 }
             }
         }
 
-        if (shipStillExists) {
+        if (shipStillExists)
+        {
             p->numberOfShips++; // Count this ship since it exists
         }
+    }
+
+    // Unlock the torpedo if three ships are sunk and it hasn't been unlocked already
+    Player *PlayerAttacking = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
+
+    // (the player passed in checkForDestroyedShips() is the one attacked)
+    if (p->numberOfShips < 2 && PlayerAttacking->torpedoAlreadyUnlocked == false)
+    {
+        PlayerAttacking->torpedoUnlocked = true;        // Unlock the torpedo
+        PlayerAttacking->torpedoAlreadyUnlocked = true; // Prevent future unlocks
     }
 }
 
@@ -205,7 +223,7 @@ void displayBattleField(Player *p, char difficulty)
 
     for (int i = 0; i < 10; i++)
     {
-        printf("%-4i", i+1);
+        printf("%-4i", i + 1);
         for (int j = 0; j < 10; j++)
         {
             if (p->BattleGround[i][j] == 0 || p->BattleGround[i][j] == 1 || p->BattleGround[i][j] == 2 || p->BattleGround[i][j] == 3 || p->BattleGround[i][j] == 4) // 0 means we never attacked there and 1 to 4 means there is a ship
@@ -386,18 +404,21 @@ void initializePlayers()
     player1.smoke_screen = 0;
     player1.numberOfShips = 4;
     player1.hitAShipInPreviousTurn = 0;
+    player1.torpedoUnlocked = 0;
+    player1.torpedoAlreadyUnlocked = 0;
 
     player2.radar_sweeps = 3;
     player2.smoke_screen = 0;
     player2.numberOfShips = 4;
     player2.hitAShipInPreviousTurn = 0;
+    player2.torpedoUnlocked = 0;
+    player2.torpedoAlreadyUnlocked = 0;
 
     // still have to get positions of ships of players
     getPositions(&player1); // gettings positions
     clearScreen();
     getPositions(&player2);
     clearScreen();
-    
 }
 
 void makeMove(Player *p)
@@ -410,41 +431,73 @@ void makeMove(Player *p)
     toUpper1(ability);
     toUpper1(coordinates);
 
-    if (coordinates[0] < 'A' || coordinates[0] > 'J')
-    {
-        printf("Invalid coordinate letter.\n");
-        return;
-    }
-
-    int y = coordinates[0] - 'A';
-    int x = atoi(&coordinates[1]) - 1;
-
-    if (y < 0 || y >= 10)
-    {
-        printf("Invalid coordinate number.\n");
-        return;
-    }
-
     if (strcmp(ability, "FIRE") == 0)
     {
+        if (coordinates[0] < 'A' || coordinates[0] > 'J')
+        {
+            printf("Invalid coordinate letter.\n");
+            return;
+        }
+
+        int y = coordinates[0] - 'A';
+        int x = atoi(&coordinates[1]) - 1;
+
+        if (y < 0 || y >= 10)
+        {
+            printf("Invalid coordinate number.\n");
+            return;
+        }
         Fire(p, x, y);
     }
+
+    else if (strcmp(ability, "TORPEDO") == 0)
+    {
+
+        int z;      // need z and isRow for torpedo method as it only needs
+        bool isRow; // one coordinate (either row or column coordinate)
+        if (isdigit(coordinates[0]))
+        {
+            z = atoi(&coordinates[0]) - 1;
+            isRow = 1;
+        }
+        else
+        {
+            z = coordinates[0] - 'A';
+            isRow = 0;
+        }
+        Torpedo(p, z, isRow);
+    }
+
     else if (strcmp(ability, "RADAR") == 0)
     {
-        performRadarSweep(p,x,y);
+         if (coordinates[0] < 'A' || coordinates[0] > 'J')
+        {
+            printf("Invalid coordinate letter.\n");
+            return;
+        }
+
+        int y = coordinates[0] - 'A';
+        int x = atoi(&coordinates[1]) - 1;
+
+        if (y < 0 || y >= 10)
+        {
+            printf("Invalid coordinate number.\n");
+            return;
+        }
+        performRadarSweep(p, x, y);
     }
+
     else
     {
         printf("Unknown ability.\n");
     }
 }
 
-void performRadarSweep(Player *p, int x, int y) // this is the code i was responsonsible for the radar sweep. it checks for ships in the range as instructed
-// a 2x2 range and no more than 3.
+void performRadarSweep(Player *p, int x, int y)
 {
-    Player *PlayerAttacking=(strcmp(p->name,player1.name)==0)?&player2:&player1;
-    //this is important as we need to check the number of radar sweeps remaining 
-    //for the attacking player (the player passed in performRadarSweep is the one being attacked)
+    Player *PlayerAttacking = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
+    // this is important as we need to check the number of radar sweeps remaining
+    // for the attacking player (the player passed in performRadarSweep is the one being attacked)
 
     if (PlayerAttacking->radar_sweeps == 0)
     {
@@ -463,8 +516,8 @@ void performRadarSweep(Player *p, int x, int y) // this is the code i was respon
     {
         for (int j = y; j <= y + 1; j++)
         {
-            if (p->BattleGround[i][j] <= 4 && p->BattleGround[i][j]>=1)//1,2,3,4 represent ships
-            { 
+            if (p->BattleGround[i][j] <= 4 && p->BattleGround[i][j] >= 1) // 1,2,3,4 represent ships
+            {
                 shipsFound = 1;
                 break;
             }
@@ -497,12 +550,13 @@ char setGameDifficulty()
     printf("e. Easy\n");
     printf("h. Hard\n");
     printf("Enter your choice (e/h): ");
-    int c;int b;
+    int c;
+    int b;
 
     while (1)
     {
         scanf("%c", &gameDifficulty);
-        scanf("%c",&b);                              // this is to ensure we cleared any extra input in the buffer
+        scanf("%c", &b);                          // this is to ensure we cleared any extra input in the buffer
         gameDifficulty = tolower(gameDifficulty); // Convert to lower-case to handle upper-case input
         if (gameDifficulty == 'e' || gameDifficulty == 'h')
         {
@@ -535,6 +589,61 @@ void toUpper1(char input[]) // this is a method to turn string into uppercase si
     }
 }
 
+void Torpedo(Player *p, int z, bool isRow)
+{
+    Player *PlayerAttacking = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
+    // (the player passed in Torpedo is the one being attacked)
+
+    if (!(PlayerAttacking->torpedoUnlocked))
+    {
+        printf("Torpedo is not unlocked.\n");
+        return;
+    }
+
+    bool hit = false;
+
+    if (isRow)
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            if (p->BattleGround[z][i] >= 1 && p->BattleGround[z][i] <= 4)
+            {
+                p->BattleGround[z][i] = 5;
+                hit = true;
+            }
+            else if (p->BattleGround[z][i] == 0)
+            {
+                p->BattleGround[z][i] = 6;
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            if (p->BattleGround[i][z] >= 1 && p->BattleGround[i][z] <= 4)
+            {
+                p->BattleGround[i][z] = 5;
+                hit = true;
+            }
+            else if (p->BattleGround[i][z] == 0)
+            {
+                p->BattleGround[i][z] = 6;
+            }
+        }
+    }
+    if (hit)
+    {
+        printf("hit\n");
+    }
+    else
+    {
+        printf("miss\n");
+    }
+
+    PlayerAttacking->torpedoUnlocked = 0;
+}
+
 void updateBattleField(char BattleGround[10][10], char position[], char orientation, int lengthOfCarrier, int numberAssociated) // Updating the battlefield after positions are entered
 {
     int x = position[0] - 'A';
@@ -562,4 +671,3 @@ void updateBattleField(char BattleGround[10][10], char position[], char orientat
         }
     }
 }
-
