@@ -14,7 +14,7 @@ struct player
     char name[16];
     char positions[4][4];
     int numberOfShips;
-    int hitAShipInPreviousTurn;
+    int destroyedAShipInPreviousTurn;
     int radar_sweeps;
     int smoke_screen;
     bool torpedoUnlocked;
@@ -29,6 +29,7 @@ char gameDifficulty;
 const char *arsenal[] = {"carrier", "battleship", "destroyer", "submarine"};
 
 // methods
+void Artillery(Player *p, int x, int y);
 bool checkInputValidity(char input[]);
 bool checkPositionValidity(char input[], int lengthOfCaerrier, char BattleGround[10][10], char orientation);
 void checkForDestroyedShips(Player *p);
@@ -90,6 +91,43 @@ int main()
 }
 
 // Functions:
+void Artillery(Player *p, int x, int y)
+{
+    Player *PlayerAttacking = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
+    // (the player passed in Artillery is the one being attacked)
+
+    if (PlayerAttacking->destroyedAShipInPreviousTurn == 0)
+    {
+        printf("You cannot use this ability since you did not sink a ship in your past turn\n"); // this is to fullfill the condition that a player needs to sink a ship in his previous turn to be able to use this ability
+        return;
+    }
+    int hit = 0;
+    int alreadyHit = 0;
+    int miss = 0;
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            if (p->BattleGround[i][j] != 0 && p->BattleGround[i][j] != 5 && p->BattleGround[i][j] != 6)
+            {
+                p->BattleGround[i][j] = 5;
+                hit++;
+            }
+            else if (p->BattleGround[i][j] == 0)
+            {
+                p->BattleGround[i][j] = 6;
+                miss++;
+            }
+            else if (p->BattleGround[i][j] == 5 || p->BattleGround[i][j] == 6)
+            {
+                alreadyHit++;
+            }
+        }
+    }
+    printf("You hit %d unharmed ships, %d already harmed ships, and missed on %d shots.\n", hit, alreadyHit, miss);
+    PlayerAttacking->destroyedAShipInPreviousTurn = 0;
+}
+
 bool checkInputValidity(char input[]) // so we can check if the position inputed is in the correct format
 {
     if (strlen(input) < 2 || strlen(input) > 3) // checking for length, because it should be minimum 2 and max 3 (examples for wrong input:A,2,6,AB5)
@@ -273,12 +311,12 @@ void Fire(Player *p, int x, int y)
         p->BattleGround[x][y] = 5;
         printf("Hit!\n");
         if (strcmp(p->name, player1.name) == 0)
-        {                                       // means that player 2 is playing and we passed player1 to the method so that we can edit his BattleGround
-            player2.hitAShipInPreviousTurn = 1; // player2 hit a ship in his turn which will later become his previous turn
+        {                                             // means that player 2 is playing and we passed player1 to the method so that we can edit his BattleGround
+            player2.destroyedAShipInPreviousTurn = 1; // player2 hit a ship in his turn which will later become his previous turn
         }
         else
         {
-            player1.hitAShipInPreviousTurn = 1;
+            player1.destroyedAShipInPreviousTurn = 1;
         }
     }
     else if (p->BattleGround[x][y] == 5 || p->BattleGround[x][y] == 6)
@@ -290,12 +328,12 @@ void Fire(Player *p, int x, int y)
         printf("Miss!\n");
         p->BattleGround[x][y] = 6;
         if (strcmp(p->name, player1.name) == 0)
-        {                                       // means that player 2 is playing and we passed player1 to the method so that we can edit his BattleGround
-            player2.hitAShipInPreviousTurn = 0; // player2 didn't hit a ship in his turn which will later become his previous turn
+        {                                             // means that player 2 is playing and we passed player1 to the method so that we can edit his BattleGround
+            player2.destroyedAShipInPreviousTurn = 0; // player2 didn't hit a ship in his turn which will later become his previous turn
         }
         else
         {
-            player1.hitAShipInPreviousTurn = 0;
+            player1.destroyedAShipInPreviousTurn = 0;
         }
     }
     printf("\n");
@@ -403,14 +441,14 @@ void initializePlayers()
     player1.radar_sweeps = 3;
     player1.smoke_screen = 0;
     player1.numberOfShips = 4;
-    player1.hitAShipInPreviousTurn = 0;
+    player1.destroyedAShipInPreviousTurn = 0;
     player1.torpedoUnlocked = 0;
     player1.torpedoAlreadyUnlocked = 0;
 
     player2.radar_sweeps = 3;
     player2.smoke_screen = 0;
     player2.numberOfShips = 4;
-    player2.hitAShipInPreviousTurn = 0;
+    player2.destroyedAShipInPreviousTurn = 0;
     player2.torpedoUnlocked = 0;
     player2.torpedoAlreadyUnlocked = 0;
 
@@ -431,7 +469,7 @@ void makeMove(Player *p)
     toUpper1(ability);
     toUpper1(coordinates);
 
-    if (strcmp(ability, "FIRE") == 0)
+    if (strcmp(ability, "FIRE") == 0 || strcmp(ability, "ARTILLERY") ==0 || strcmp(ability, "RADAR") == 0)
     {
         if (coordinates[0] < 'A' || coordinates[0] > 'J')
         {
@@ -447,7 +485,16 @@ void makeMove(Player *p)
             printf("Invalid coordinate number.\n");
             return;
         }
-        Fire(p, x, y);
+        
+        if(strcmp(ability, "FIRE") == 0){
+            Fire(p,x,y);
+        }
+        else if(strcmp(ability, "ARTILLERY") == 0){
+            Artillery(p, x, y);
+        }
+        else if(strcmp(ability, "RADAR") == 0){
+            performRadarSweep(p,x,y);
+        }
     }
 
     else if (strcmp(ability, "TORPEDO") == 0)
@@ -466,25 +513,6 @@ void makeMove(Player *p)
             isRow = 0;
         }
         Torpedo(p, z, isRow);
-    }
-
-    else if (strcmp(ability, "RADAR") == 0)
-    {
-         if (coordinates[0] < 'A' || coordinates[0] > 'J')
-        {
-            printf("Invalid coordinate letter.\n");
-            return;
-        }
-
-        int y = coordinates[0] - 'A';
-        int x = atoi(&coordinates[1]) - 1;
-
-        if (y < 0 || y >= 10)
-        {
-            printf("Invalid coordinate number.\n");
-            return;
-        }
-        performRadarSweep(p, x, y);
     }
 
     else
