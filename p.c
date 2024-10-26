@@ -12,7 +12,7 @@ struct player
 {
     char BattleGround[10][10];
     char name[16];
-    char positions[4][3];
+    char positions[4][4];
     int numberOfShips;
     int hitAShipInPreviousTurn;
     int radar_sweeps;
@@ -38,6 +38,7 @@ int getRandomTurn();
 void getPositions(Player *p);
 void initializePlayers();
 void makeMove(Player *p);
+void performRadarSweep(Player *p, int x, int y);
 char setGameDifficulty();
 void toUpper1(char input[]); // toUpper1 makes a char[] to uppercase (a string)
 void updateBattleField(char battlefield[10][10], char position[], char orientation, int lengthOfCarrier, int numberAssociated);
@@ -72,14 +73,14 @@ int main()
         }
     } while (player1.numberOfShips != 0 && player2.numberOfShips != 0);
 
-    printf("Game Over!");
+    printf("Game Over!\n");
     if (player1.numberOfShips == 0)
     {
-        printf("Player 2 is the winner");
+        printf("Player 2 is the winner\n");
     }
     else
     {
-        printf("Player 1 is the winner");
+        printf("Player 1 is the winner\n");
     }
 
     return 0;
@@ -92,6 +93,7 @@ bool checkInputValidity(char input[]) // so we can check if the position inputed
     {
         return 0;
     }
+
     if (strlen(input) == 2) // if it is from A-J and 1-9 only(2 characters long)
     {
         if (input[0] < 'A' || input[0] > 'J')
@@ -222,7 +224,7 @@ void displayBattleField(Player *p, char difficulty)
                     }
                     else if (p->BattleGround[i][j] == 6)
                     {
-                        printf("X  "); // we shot there but didnt hit anything
+                        printf("o  "); // we shot there but didnt hit anything
                     }
                     break;
 
@@ -315,7 +317,7 @@ void getPositions(Player *p) // method to get positions from user and update the
         while (!validInput)
         { // so we can detect any illegal arguments passed by the user
             printf("Please enter the position of your %s.\n", arsenal[i]);
-            scanf("%3s", p->positions[i]);
+            scanf("%4s", p->positions[i]);
             toUpper1(p->positions[i]); // make this easier for us to update the battlefield later
             while ((c = getchar()) != '\n' && c != EOF)
                 ;
@@ -395,6 +397,7 @@ void initializePlayers()
     clearScreen();
     getPositions(&player2);
     clearScreen();
+    
 }
 
 void makeMove(Player *p)
@@ -426,10 +429,63 @@ void makeMove(Player *p)
     {
         Fire(p, x, y);
     }
+    else if (strcmp(ability, "RADAR") == 0)
+    {
+        performRadarSweep(p,x,y);
+    }
     else
     {
         printf("Unknown ability.\n");
     }
+}
+
+void performRadarSweep(Player *p, int x, int y) // this is the code i was responsonsible for the radar sweep. it checks for ships in the range as instructed
+{
+    Player *PlayerAttacking=(strcmp(p->name,player1.name)==0)?&player2:&player1;
+    //this is important as we need to check the number of radar sweeps remaining 
+    //for the attacking player (the player passed in performRadarSweep is the one being attacked)
+
+    if (PlayerAttacking->radar_sweeps == 0)
+    {
+        printf("No radar sweeps remaining. You lose your turn.\n");
+        return;
+    }
+
+    // Check bounds for the 2x2 radar area
+    if (x == 9 || y == 9)
+    {
+        printf("Invalid radar sweep coordinates. The top-left corner should be within A-I and 1-9.\n");
+        return;
+    }
+    bool shipsFound = 0;
+    for (int i = x; i <= x + 1; i++)
+    {
+        for (int j = y; j <= y + 1; j++)
+        {
+            if (p->BattleGround[i][j] <= 4 && p->BattleGround[i][j]>=1)//1,2,3,4 represent ships
+            { 
+                shipsFound = 1;
+                break;
+            }
+        }
+        if (shipsFound)
+            break;
+    }
+
+    if (shipsFound)
+    {
+        printf("Enemy ships found!\n");
+    }
+    else
+    {
+        printf("No enemy ships found!\n");
+    }
+
+    // Decrement radar sweeps
+    (PlayerAttacking->radar_sweeps)--;
+
+    printf("Remaining radar sweeps: %d\n", PlayerAttacking->radar_sweeps);
+    printf("\n");
 }
 
 char setGameDifficulty()
@@ -505,22 +561,4 @@ void updateBattleField(char BattleGround[10][10], char position[], char orientat
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
