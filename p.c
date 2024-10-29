@@ -14,9 +14,12 @@ struct player
     char name[16];
     char positions[4][4];
     int numberOfShips;
+    bool DestroyedShips[5];
     int destroyedAShipInPreviousTurn;
     int radar_sweeps;
-    int smoke_screen;
+    int smoke_screens;
+    char obscured_areas[4][3];
+    int number_obscured_positions;
     bool torpedoUnlocked;
     bool torpedoAlreadyUnlocked;
     // int score; we can implement this one later when the game can be played more than once
@@ -35,6 +38,7 @@ bool checkPositionValidity(char input[], int lengthOfCaerrier, char BattleGround
 void checkForDestroyedShips(Player *p);
 void clearScreen();
 void displayBattleField(Player *p, char difficulty);
+void displayAvailableMoves(Player *p);
 void Fire(Player *p, int x, int y);
 void fillArrays();
 int getRandomTurn();
@@ -42,6 +46,7 @@ void getPositions(Player *p);
 void initializePlayers();
 void makeMove(Player *p);
 void performRadarSweep(Player *p, int x, int y);
+void smoke_screen(Player *p, int x, int y);
 char setGameDifficulty();
 void toUpper1(char input[]); // toUpper1 makes a char[] to uppercase (a string)
 void Torpedo(Player *p, int z, bool isRow);
@@ -61,16 +66,18 @@ int main()
         // clearScreen();
         if (currentPlayer == 1)
         {
-            printf("Player 1's turn:\n");
+            printf("Player 1's (%s's) turn:\n", player1.name);
             displayBattleField(&player2, gameDifficulty);
+            displayAvailableMoves(&player1);
             makeMove(&player2);
             checkForDestroyedShips(&player2);
             currentPlayer = 2;
         }
         else
         {
-            printf("Player 2's turn:\n");
+            printf("Player 2's (%s's) turn:\n", player2.name);
             displayBattleField(&player1, gameDifficulty);
+            displayAvailableMoves(&player2);
             makeMove(&player1);
             checkForDestroyedShips(&player1);
             currentPlayer = 1;
@@ -80,11 +87,11 @@ int main()
     printf("Game Over!\n");
     if (player1.numberOfShips == 0)
     {
-        printf("Player 2 is the winner\n");
+        printf("Player 2 (%s) is the winner!\n", player2.name);
     }
     else
     {
-        printf("Player 1 is the winner\n");
+        printf("Player 1 (%s) is the winner!\n", player1.name);
     }
 
     return 0;
@@ -93,6 +100,11 @@ int main()
 // Functions:
 void Artillery(Player *p, int x, int y)
 {
+    // this artillery method allows the user to unlock it multiple times throughout the game
+    // however if we want to allow to unlock it only once throughout the game then we
+    // can create a boolean artilleryAlreadyUnloked if its 1 then we wont allow him to do
+    // any artilleries anymore
+
     Player *PlayerAttacking = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
     // (the player passed in Artillery is the one being attacked)
 
@@ -124,8 +136,9 @@ void Artillery(Player *p, int x, int y)
             }
         }
     }
-    printf("You hit %d unharmed ships, %d already harmed ships, and missed on %d shots.\n", hit, alreadyHit, miss);
+    printf("You hit %d unharmed ships, %d already harmed ships, and missed on %d shots.\n\n", hit, alreadyHit, miss);
     PlayerAttacking->destroyedAShipInPreviousTurn = 0;
+    p->number_obscured_positions = 0; // this is because the effect of smoke screen expired after a turn
 }
 
 bool checkInputValidity(char input[]) // so we can check if the position inputed is in the correct format
@@ -210,7 +223,10 @@ bool checkPositionValidity(char input[], int lengthOfCarrier, char BattleGround[
 
 void checkForDestroyedShips(Player *p)
 {
+    Player *PlayerAttacking = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
+    int previousNumberOfShips = p->numberOfShips;
     p->numberOfShips = 0;
+    int newDestroyedShip;
 
     // Check for remaining ships
     for (int m = 1; m <= 4; m++)
@@ -227,17 +243,36 @@ void checkForDestroyedShips(Player *p)
                 }
             }
         }
-
         if (shipStillExists)
         {
             p->numberOfShips++; // Count this ship since it exists
         }
+        else
+        { // we should update the DestroyedShips so we know which ships are destroyed
+            if (p->DestroyedShips[m] == 0)
+            {
+                newDestroyedShip = m; // if DestroyedShips[m] was false it means the ship wasn't
+                                      // destroyed so it just got destroyed. We save the newly
+                                      // destroyed ship in an int so we can print this ship later
+            }
+            p->DestroyedShips[m] = true;
+        }
+    }
+
+    if (previousNumberOfShips != p->numberOfShips)
+    {
+        PlayerAttacking->destroyedAShipInPreviousTurn = 1;
+        PlayerAttacking->smoke_screens++;
+        printf("You destroyed a %s!\n\n",arsenal[newDestroyedShip-1]);//print which ship just got destroyed
+    }
+    else
+    {
+        PlayerAttacking->destroyedAShipInPreviousTurn = 0;
     }
 
     // Unlock the torpedo if three ships are sunk and it hasn't been unlocked already
-    Player *PlayerAttacking = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
-
     // (the player passed in checkForDestroyedShips() is the one attacked)
+    PlayerAttacking->torpedoUnlocked = false;
     if (p->numberOfShips < 2 && PlayerAttacking->torpedoAlreadyUnlocked == false)
     {
         PlayerAttacking->torpedoUnlocked = true;        // Unlock the torpedo
@@ -304,20 +339,37 @@ void displayBattleField(Player *p, char difficulty)
     }
 }
 
+void displayAvailableMoves(Player *p)
+{
+    printf("Available moves for %s:\n", p->name);
+    printf("-Fire\n");
+    if (p->radar_sweeps > 0)
+    {
+        printf("-Radar Sweep (Remaining: %d)\n", p->radar_sweeps);
+    }
+    if (p->smoke_screens > 0)
+    {
+        printf("-Smoke Screen (Remaining: %d)\n", p->smoke_screens);
+    }
+    if (p->destroyedAShipInPreviousTurn == 1)
+    {
+        printf("-Use Artillery\n");
+    }
+    if (p->torpedoUnlocked)
+    {
+        printf("-Use Torpedo\n");
+    }
+    printf("\n");
+}
+
 void Fire(Player *p, int x, int y)
 {
+    // we passed the player being attacked to the method so that we can edit his BattleGround
+
     if (p->BattleGround[x][y] == 1 || p->BattleGround[x][y] == 2 || p->BattleGround[x][y] == 3 || p->BattleGround[x][y] == 4)
     {
         p->BattleGround[x][y] = 5;
         printf("Hit!\n");
-        if (strcmp(p->name, player1.name) == 0)
-        {                                             // means that player 2 is playing and we passed player1 to the method so that we can edit his BattleGround
-            player2.destroyedAShipInPreviousTurn = 1; // player2 hit a ship in his turn which will later become his previous turn
-        }
-        else
-        {
-            player1.destroyedAShipInPreviousTurn = 1;
-        }
     }
     else if (p->BattleGround[x][y] == 5 || p->BattleGround[x][y] == 6)
     {
@@ -327,16 +379,9 @@ void Fire(Player *p, int x, int y)
     {
         printf("Miss!\n");
         p->BattleGround[x][y] = 6;
-        if (strcmp(p->name, player1.name) == 0)
-        {                                             // means that player 2 is playing and we passed player1 to the method so that we can edit his BattleGround
-            player2.destroyedAShipInPreviousTurn = 0; // player2 didn't hit a ship in his turn which will later become his previous turn
-        }
-        else
-        {
-            player1.destroyedAShipInPreviousTurn = 0;
-        }
     }
     printf("\n");
+    p->number_obscured_positions = 0; // this is because the effect of smoke screen expired after a turn
 }
 
 /*this fillArray method fills in all the array spaces with 0, the reason i didn't
@@ -372,7 +417,7 @@ void getPositions(Player *p) // method to get positions from user and update the
         int validInput = 0;
         while (!validInput)
         { // so we can detect any illegal arguments passed by the user
-            printf("Please enter the position of your %s.\n", arsenal[i]);
+            printf("Enter the position of your %s.\n", arsenal[i]);
             scanf("%4s", p->positions[i]);
             toUpper1(p->positions[i]); // make this easier for us to update the battlefield later
             while ((c = getchar()) != '\n' && c != EOF)
@@ -439,22 +484,26 @@ void initializePlayers()
     // At the start of the game each player has 3 radar sweeps, 0 smoke screens,
     // 4 ships and he hasn't hit a ship yet in previous turn (obviously)
     player1.radar_sweeps = 3;
-    player1.smoke_screen = 0;
+    player1.smoke_screens = 0;
     player1.numberOfShips = 4;
     player1.destroyedAShipInPreviousTurn = 0;
     player1.torpedoUnlocked = 0;
     player1.torpedoAlreadyUnlocked = 0;
+    player1.number_obscured_positions = 0;
 
     player2.radar_sweeps = 3;
-    player2.smoke_screen = 0;
+    player2.smoke_screens = 0;
     player2.numberOfShips = 4;
     player2.destroyedAShipInPreviousTurn = 0;
     player2.torpedoUnlocked = 0;
     player2.torpedoAlreadyUnlocked = 0;
+    player2.number_obscured_positions = 0;
 
     // still have to get positions of ships of players
-    getPositions(&player1); // gettings positions
+    printf("Player 1 (%s) please enter the positions of your ships\n", player1.name);
+    getPositions(&player1);
     clearScreen();
+    printf("Player 2 (%s) please enter the positions of your ships\n", player2.name);
     getPositions(&player2);
     clearScreen();
 }
@@ -463,13 +512,13 @@ void makeMove(Player *p)
 {
     char ability[10];
     char coordinates[5];
-    printf("Enter a move followed by the coordinate (e.g., FIRE A5): ");
+    printf("Enter a move followed by the coordinate (e.g., FIRE A5, TORPEDO 1, SMOKE B5): ");
     scanf("%9s %4s", ability, coordinates);
 
     toUpper1(ability);
     toUpper1(coordinates);
 
-    if (strcmp(ability, "FIRE") == 0 || strcmp(ability, "ARTILLERY") ==0 || strcmp(ability, "RADAR") == 0)
+    if (strcmp(ability, "FIRE") == 0 || strcmp(ability, "ARTILLERY") == 0 || strcmp(ability, "RADAR") == 0 || strcmp(ability, "SMOKE") == 0)
     {
         if (coordinates[0] < 'A' || coordinates[0] > 'J')
         {
@@ -485,15 +534,24 @@ void makeMove(Player *p)
             printf("Invalid coordinate number.\n");
             return;
         }
-        
-        if(strcmp(ability, "FIRE") == 0){
-            Fire(p,x,y);
+
+        if (strcmp(ability, "FIRE") == 0)
+        {
+            Fire(p, x, y);
         }
-        else if(strcmp(ability, "ARTILLERY") == 0){
+        else if (strcmp(ability, "ARTILLERY") == 0)
+        {
             Artillery(p, x, y);
         }
-        else if(strcmp(ability, "RADAR") == 0){
-            performRadarSweep(p,x,y);
+        else if (strcmp(ability, "RADAR") == 0)
+        {
+            performRadarSweep(p, x, y);
+        }
+        else if (strcmp(ability, "SMOKE") == 0)
+        {
+            Player *PlayerPlaying = (strcmp(p->name, player1.name) == 0) ? &player2 : &player1;
+            smoke_screen(PlayerPlaying, x, y); // because we need to modify the player playing's grid to hide his ships
+            clearScreen();
         }
     }
 
@@ -533,22 +591,27 @@ void performRadarSweep(Player *p, int x, int y)
         return;
     }
 
-    // Check bounds for the 2x2 radar area
-    if (x == 9 || y == 9)
-    {
-        printf("Invalid radar sweep coordinates. The top-left corner should be within A-I and 1-9.\n");
-        return;
-    }
     bool shipsFound = 0;
-    for (int i = x; i <= x + 1; i++)
+    char ij[3]; // to store ij position to compare it to obscured positions
+    for (int i = x; i <= x + 1 && i < 10; i++)
     {
-        for (int j = y; j <= y + 1; j++)
+        for (int j = y; j <= y + 1 && j < 10; j++)
         {
             if (p->BattleGround[i][j] <= 4 && p->BattleGround[i][j] >= 1) // 1,2,3,4 represent ships
             {
                 shipsFound = 1;
-                break;
+                for (int k = 0; k < p->number_obscured_positions; k++)
+                {
+                    sprintf(ij, "%d%d", i, j);
+                    if (strcmp(p->obscured_areas[k], ij) == 0)
+                    {
+                        shipsFound = 0;
+                        break;
+                    }
+                }
             }
+            if (shipsFound)
+                break;
         }
         if (shipsFound)
             break;
@@ -565,9 +628,30 @@ void performRadarSweep(Player *p, int x, int y)
 
     // Decrement radar sweeps
     (PlayerAttacking->radar_sweeps)--;
+    p->number_obscured_positions = 0; // this is because the effect of smoke screen expired after a turn
 
-    printf("Remaining radar sweeps: %d\n", PlayerAttacking->radar_sweeps);
     printf("\n");
+}
+
+void smoke_screen(Player *p, int x, int y)
+{
+    if (p->smoke_screens == 0)
+    {
+        printf("You don't have any smoke screens. You lose your turn.\n");
+        return;
+    }
+
+    p->number_obscured_positions = 0;
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            sprintf(p->obscured_areas[p->number_obscured_positions], "%d%d", i, j);
+            p->number_obscured_positions++;
+        }
+    }
+
+    p->smoke_screens--;
 }
 
 char setGameDifficulty()
@@ -579,7 +663,7 @@ char setGameDifficulty()
     printf("h. Hard\n");
     printf("Enter your choice (e/h): ");
     int c;
-    int b;
+    char b;
 
     while (1)
     {
@@ -670,6 +754,7 @@ void Torpedo(Player *p, int z, bool isRow)
     }
 
     PlayerAttacking->torpedoUnlocked = 0;
+    p->number_obscured_positions = 0; // this is because the effect of smoke screen expired after a turn
 }
 
 void updateBattleField(char BattleGround[10][10], char position[], char orientation, int lengthOfCarrier, int numberAssociated) // Updating the battlefield after positions are entered
