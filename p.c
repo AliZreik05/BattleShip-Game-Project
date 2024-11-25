@@ -36,6 +36,10 @@ const char *arsenal[] = {"carrier", "battleship", "destroyer", "submarine"};
 void Artillery(int x, int y);
 void BotGetPositions();
 void BotmakeMove();
+void BotTorpedo();
+void BotRadarSweep();
+void BotSmokeScreen(int x, int y);
+void BotFire();
 bool checkInputValidity(char input[]);
 bool checkPositionValidity(char name[], char input[], int lengthOfCaerrier, char BattleGround[10][10], char orientation);
 void checkForDestroyedShips(Player *p);
@@ -180,9 +184,56 @@ void BotGetPositions()
     }
 }
 
-void BotmakeMove()
-{
+void BotmakeMove() {
+    srand(time(NULL));
+
+    // Weighted probability: Fire (50%), Torpedo (20%), Smoke Screen (15%), Radar Sweep (15%), this way the bot will truly be random in its moves
+    // i made it so that the bot mostly fires instead of firing off abilities all the time while ensuring that the abilities can still be used
+    int randomChoice = rand() % 100; // Random number between 0 and 99
+
+    if (randomChoice < 50) {
+        // Fire
+        printf("Bot chooses to Fire!\n");
+        BotFire();
+    } else if (randomChoice >= 50 && randomChoice < 70) {
+        // Torpedo (if unlocked)
+        if (bot.torpedoUnlocked) {
+            printf("Bot chooses to use Torpedo!\n");
+            int z = rand() % 10;
+            bool isRow = rand() % 2; // Randomly choose row or column
+            BotTorpedo(z, isRow);
+        } else {
+            // If Torpedo isnt available, Fire
+            printf("Bot attempts Torpedo, but it is not unlocked. Bot Fires instead.\n");
+            BotFire();
+        }
+    } else if (randomChoice>= 70 && randomChoice < 85) {
+        // Smoke Screen
+        if (bot.smoke_screens > 0) {
+            printf("Bot chooses to use Smoke Screen!\n");
+            int x = rand() % 9; // Ensure the 2x2 area fits
+            int y = rand() % 9;
+            BotSmokeScreen(x, y); // Pass the randomly chosen position
+        } else {
+            // If no smoke screens left, Fire
+            printf("Bot attempts Smoke Screen, but has none left. Bot Fires instead.\n");
+            BotFire();
+        }
+    } else {
+        // Radar Sweep
+        if (bot.radar_sweeps > 0) {
+            printf("Bot chooses to perform a Radar Sweep!\n");
+            int x = rand() % 9; // Ensure the sweep area fits
+            int y = rand() % 9;
+            BotRadarSweep(x, y);
+        } else {
+            // If no radar sweeps left, Fire
+            printf("Bot attempts Radar Sweep, but has none left. Bot Fires instead.\n");
+            BotFire();
+        }
+    }
 }
+
 
 bool checkInputValidity(char input[]) // so we can check if the position inputed is in the correct format
 {
@@ -431,6 +482,30 @@ void Fire(int x, int y)
     bot.number_obscured_positions = 0; // this is because the effect of smoke screen which
                                        // the bot potentially used expired after a turn
 }
+void BotFire() {
+    int x, y;
+    bool validMove = false;
+
+    while (!validMove) {
+        x = rand() % 10; // Random row
+        y = rand() % 10; // Random column
+
+        if (player.BattleGround[x][y] != 5 && player.BattleGround[x][y] != 6) {
+            validMove = true;
+        }
+    }
+
+    if (player.BattleGround[x][y] >= 1 && player.BattleGround[x][y] <= 4) {
+        player.BattleGround[x][y] = 5; // Hit
+        printf("Bot fires at %c%d and hits!\n", 'A' + x, y + 1);
+    } else {
+        player.BattleGround[x][y] = 6; // Miss
+        printf("Bot fires at %c%d and misses!\n", 'A' + x, y + 1);
+    }
+
+    player.number_obscured_positions = 0; // Clear smoke screen effects
+}
+
 
 /*this fillArray method fills in all the array spaces with 0, the reason i didn't
  initialize the first element to 0 and let the rest of the array get filled automatically is
@@ -660,10 +735,33 @@ void performRadarSweep(int x, int y)
 
     // Decrement radar sweeps
     (player.radar_sweeps)--;
-    bot.number_obscured_positions = 0; // this is because the effect of smoke screen which
-                                       // the bot potentially used expired after a turn
+    bot.number_obscured_positions = 0; // this is because the effect of smoke screen which the bot potentially used expired after a turn
 
     printf("\n");
+}
+void BotRadarSweep() {
+    if (bot.radar_sweeps == 0) { // if used up all number of uses
+        printf("Bot has no radar sweeps left.\n");
+        return;
+    }
+
+    srand(time(NULL));
+    int centerRow = rand() % 10; 
+    int centerCol = rand() % 10;
+
+    printf("Bot uses Radar Sweep at %c%d\n", 'A' + centerRow, centerCol + 1);
+
+    for (int i = centerRow - 1; i <= centerRow + 1; i++) {
+        for (int j = centerCol - 1; j <= centerCol + 1; j++) {
+            if (i >= 0 && i < 10 && j >= 0 && j < 10) { // boundary checking
+                if (player.BattleGround[i][j] >= 1 && player.BattleGround[i][j] <= 4) { // got a hit
+                    printf("Radar detected a ship part at %c%d\n", 'A' + i, j + 1);
+                }
+            }
+        }
+    }
+
+    bot.radar_sweeps--; // decrement after use regardless of hit or not
 }
 
 void smoke_screen(int x, int y)
@@ -687,6 +785,24 @@ void smoke_screen(int x, int y)
     player.smoke_screens--;
     bot.number_obscured_positions = 0; // this is because the effect of smoke screen which
                                        // the bot potentially used expired after a turn
+}
+void BotSmokeScreen(int x, int y) {
+    if (bot.smoke_screens == 0) {
+        printf("Bot has no smoke screens left. Skipping action.\n");
+        return;
+    }
+
+    bot.number_obscured_positions = 0;
+
+    for (int i = x; i <= x + 1 && i < 10; i++) {
+        for (int j = y; j <= y + 1 && j < 10; j++) {
+            sprintf(bot.obscured_areas[bot.number_obscured_positions], "%d%d", i, j);
+            bot.number_obscured_positions++;
+        }
+    }
+
+    bot.smoke_screens--;
+    printf("Bot used a smoke screen at area starting (%c%d).\n", 'A' + x, y + 1);
 }
 
 char setBotDifficulty()
@@ -831,6 +947,38 @@ void Torpedo(int z, bool isRow)
     player.torpedoUnlocked = 0;
     bot.number_obscured_positions = 0; // this is because the effect of smoke screen which
                                        // the bot potentially used expired after a turn
+}
+void BotTorpedo() {
+    if (!bot.torpedoUnlocked) {
+        printf("Bot's torpedo is not unlocked yet.\n");
+        return;
+    }
+
+    srand(time(NULL));
+    bool isRow = rand() % 2; // Randomly choose row or column
+    int target = rand() % 10;
+
+    printf("Bot fires a torpedo at %s %d\n", isRow ? "row" : "column", target + 1);
+
+    if (isRow) {
+        for (int col = 0; col < 10; col++) {
+            if (player.BattleGround[target][col] >= 1 && player.BattleGround[target][col] <= 4) {
+                player.BattleGround[target][col] = 5; // Mark as hit
+            } else if (player.BattleGround[target][col] == 0) {
+                player.BattleGround[target][col] = 6; // Mark as miss
+            }
+        }
+    } else {
+        for (int row = 0; row < 10; row++) {
+            if (player.BattleGround[row][target] >= 1 && player.BattleGround[row][target] <= 4) {
+                player.BattleGround[row][target] = 5; // Mark as hit
+            } else if (player.BattleGround[row][target] == 0) {
+                player.BattleGround[row][target] = 6; // Mark as miss
+            }
+        }
+    }
+
+    bot.torpedoUnlocked = false; // Reset the torpedo ability
 }
 
 void updateBattleField(char BattleGround[10][10], char position[], char orientation, int lengthOfCarrier, int numberAssociated) // Updating the battlefield after positions are entered
