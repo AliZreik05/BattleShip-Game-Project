@@ -49,6 +49,7 @@ int adjacentHitSpots[5][2];
 int numAdjacentHitSpots;
 bool are_adjacent_ships;
 bool HittingAdjacent;
+bool BotRadar;
 
 // methods
 void Artillery(int x, int y);
@@ -72,6 +73,12 @@ void fillArrays();
 int getRandomTurn();
 void getPositions();
 void getHeatMap(Player *realPlayer);
+void HardBotArtillery(int heatmap[10][10]);
+void HardBotTorpedo(int heatmap[10][10]);
+void HardBotRadarSweep(int heatmap[10][10]);
+void HardBotFire(const int heatmap[10][10]);
+void HardBotSmokeScreen(int heatmap[10][10]);
+void HardBotMakeMove();
 void initializePlayers();
 void makeMove();
 void MediumBotArtillery(int heatmap[10][10]);
@@ -99,7 +106,6 @@ int main()
 
     do
     {
-
         if (currentPlayer == 1)
         {
             printf("%s's turn:\n", player.name);
@@ -223,6 +229,9 @@ void BotMakeMove()
     case 'm':
         MediumBotMakeMove();
         break;
+    case 'h':
+        HardBotMakeMove();
+        break;
     default:
         break;
     }
@@ -342,7 +351,7 @@ void checkForDestroyedShips(Player *p)
         }
         else
         { // we should update the DestroyedShips so we know which ships are destroyed
-            if (p->DestroyedShips[m] == 0)
+            if (p->DestroyedShips[m] == false)
             {
                 newDestroyedShip = m; // if DestroyedShips[m] was false it means the ship wasn't
                                       // destroyed so it just got destroyed. We save the newly
@@ -357,6 +366,29 @@ void checkForDestroyedShips(Player *p)
         PlayerAttacking->destroyedAShipInPreviousTurn = 1;
         PlayerAttacking->smoke_screens++;
         printf("%s destroyed a %s!\n\n", PlayerAttacking->name, arsenal[newDestroyedShip - 1]); // print which ship just got destroyed
+        if (strcmp(PlayerAttacking->name, "Bot") == 0)
+        {
+            checkedDirection = 0; // we reset attacking mode directions because we destroyed the ship
+            correctDirection = false;
+            correctDirection2 = false;
+            lastSpotHitIndex = -1;                                         // reset the index because we didn't hit a new ship yet
+            if (NumSpotsHitAttackingMode + 1 - (6 - newDestroyedShip) > 0) // if NumSpotsHitAttackingMode > length of ships means we hit another ship also and should destroy it in attacking mode
+            {
+                inAttackingMode = true;
+            }
+            NumSpotsHitAttackingMode = 0;
+            numAdjacentHitSpots--;
+
+            if (numAdjacentHitSpots == 0) // means we finished destroying the adjacent ships
+            {
+                are_adjacent_ships = false;
+            }
+            if (are_adjacent_ships == false) // we don't want attacking mode to be turned off if we are hitting adjacent ships even though we destroyed a ship
+            {
+                inAttackingMode = false; // means the bot just destroyed a ship and is no longer in attacking mode
+            }
+            HittingAdjacent = false;
+        }
     }
     else
     {
@@ -380,6 +412,40 @@ void clearScreen()
 #else
     system("clear"); // For Linux/MacOS
 #endif
+}
+
+bool checkHeatMapPlacementValidity(int x, int y, char battlefield[10][10], int lengthOfCarrier, char orientation)
+{
+    if (orientation == 'V')
+    {
+        for (int i = x; i < x + lengthOfCarrier; i++)
+        {
+            if (i >= 10 || battlefield[i][y] == 5 || battlefield[i][y] == 6)
+            {
+                return false;
+            }
+        }
+    }
+    else if (orientation == 'H')
+    {
+        for (int i = y; i < y + lengthOfCarrier; i++)
+        {
+            if (i >= 10 || battlefield[x][i] == 5 || battlefield[x][i] == 6)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool checkBotHitValidity(int x, int y)
+{
+    if (x >= 10 || y >= 10 || x < 0 || y < 0)
+    {
+        return false;
+    }
+    return true;
 }
 
 /*typica; method to display the playing field, the difficulity char is to determin wether or not to print the misses also not only the hits*/
@@ -888,6 +954,709 @@ void getPositions() // method to get positions from user and update the battlefi
     }
 }
 
+void getHeatMap(Player *realPlayer)
+{
+    for (int i = 0; i < 10; i++) // this is to reset the heatmap
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            realPlayer->heatmap[i][j] = 0;
+        }
+    }
+
+    for (int m = 1; m < 5; m++)
+    {
+        if (realPlayer->DestroyedShips[m] == false)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                for (int j = 0; j < 10; j++)
+                {
+                    if (checkHeatMapPlacementValidity(i, j, realPlayer->BattleGround, 6 - m, 'H') == true)
+                    {
+                        UpdateHeapMap(realPlayer->heatmap, i, j, 6 - m, 'H');
+                    }
+                    if (checkHeatMapPlacementValidity(i, j, realPlayer->BattleGround, 6 - m, 'V') == true)
+                    {
+                        UpdateHeapMap(realPlayer->heatmap, i, j, 6 - m, 'V');
+                    }
+                }
+            }
+        }
+    }
+}
+
+char getOrientation(int newX, int oldX)
+{
+    if ((oldX - newX) != 0)
+    {
+        return 'V';
+    }
+    else
+    {
+        return 'H';
+    }
+}
+
+void HardBotArtillery(int heatmap[10][10])
+{
+    bool hit = false;
+    int max = 0;
+    int x;
+    int y;
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            // Calculate sum of the 2x2 grid
+            for (int m = i; m <= i + 1; m++)
+            {
+                for (int n = j; n <= j + 1; n++)
+                {
+                    sum += heatmap[m][n];
+                }
+            }
+
+            // Update max and coordinates if a larger sum is found
+            if (sum > max)
+            {
+                max = sum;
+                x = i;
+                y = j;
+            }
+        }
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                    if (sum == max)
+                    {
+                        x = i;
+                        y = j;
+                    }
+                }
+            }
+        }
+    }
+
+    printf("Bot uses Artillery at %c%d!\n", 'A' + y, x + 1);
+
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            if (player.BattleGround[i][j] != 0 && player.BattleGround[i][j] != 5 && player.BattleGround[i][j] != 6)
+            {
+                hit = true;
+                player.BattleGround[i][j] = 5;
+                adjacentHitSpots[numAdjacentHitSpots][0] = i; // saving potential adjacent ship spots
+                adjacentHitSpots[numAdjacentHitSpots][1] = j;
+                numAdjacentHitSpots++;
+                lastSpotHitIndex++;
+                alreadyHitSpots[lastSpotHitIndex][0] = i;
+                alreadyHitSpots[lastSpotHitIndex][1] = j;
+                inAttackingMode = true;
+            }
+            else if (player.BattleGround[i][j] == 0)
+            {
+                player.BattleGround[i][j] = 6;
+            }
+            else if (player.BattleGround[i][j] == 5 || player.BattleGround[i][j] == 6)
+            {
+                printf("Already targeted this location!\n");
+            }
+        }
+    }
+    if (hit)
+    {
+        printf("Hit!\n");
+    }
+    else
+    {
+        printf("Miss!\n");
+    }
+    bot.destroyedAShipInPreviousTurn = 0;
+    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
+}
+
+void HardBotTorpedo(int heatmap[10][10])
+{
+    int maxRowSum = 0, maxRowIdx = -1;
+    int maxColSum = 0, maxColIdx = -1;
+    bool hit = false;
+
+    // Calculate row sums
+    for (int i = 0; i < 10; i++)
+    {
+        int rowSum = 0;
+        for (int j = 0; j < 10; j++)
+        {
+            rowSum += heatmap[i][j];
+        }
+        if (rowSum > maxRowSum)
+        {
+            maxRowSum = rowSum;
+            maxRowIdx = i;
+        }
+    }
+
+    // Calculate column sums
+    for (int j = 0; j < 10; j++)
+    {
+        int colSum = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            colSum += heatmap[i][j];
+        }
+        if (colSum > maxColSum)
+        {
+            maxColSum = colSum;
+            maxColIdx = j;
+        }
+    }
+
+    if (maxRowSum >= maxColSum)
+    {
+        printf("Bot uses Torpedo at %d\n", 1 + maxRowIdx);
+        for (int i = 0; i < 10; i++)
+        {
+            if (player.BattleGround[maxRowIdx][i] >= 1 && player.BattleGround[maxRowIdx][i] <= 4)
+            {
+                player.BattleGround[maxRowIdx][i] = 5; // 5 means hit
+                hit = true;
+                adjacentHitSpots[numAdjacentHitSpots][0] = maxRowIdx; // saving potential adjacent ship spots
+                adjacentHitSpots[numAdjacentHitSpots][1] = i;
+                numAdjacentHitSpots++;
+                lastSpotHitIndex++;
+                alreadyHitSpots[lastSpotHitIndex][0] = maxRowIdx;
+                alreadyHitSpots[lastSpotHitIndex][1] = i;
+                inAttackingMode = true;
+            }
+            else if (player.BattleGround[maxRowIdx][i] == 0)
+            {
+                player.BattleGround[maxRowIdx][i] = 6; // 6 means miss
+            }
+        }
+    }
+
+    else
+    {
+        printf("Bot uses Torpedo at %c\n", 'A' + maxColIdx);
+        for (int i = 0; i < 10; i++)
+        {
+            if (player.BattleGround[i][maxColIdx] >= 1 && player.BattleGround[i][maxColIdx] <= 4)
+            {
+                player.BattleGround[i][maxColIdx] = 5; // 5 means hit
+                hit = true;
+                adjacentHitSpots[numAdjacentHitSpots][0] = i; // saving potential adjacent ship spots
+                adjacentHitSpots[numAdjacentHitSpots][1] = maxColIdx;
+                numAdjacentHitSpots++;
+                lastSpotHitIndex++;
+                alreadyHitSpots[lastSpotHitIndex][0] = i;
+                alreadyHitSpots[lastSpotHitIndex][1] = maxColIdx;
+                inAttackingMode = true;
+            }
+            else if (player.BattleGround[i][maxColIdx] == 0)
+            {
+                player.BattleGround[i][maxColIdx] = 6; // 6 means miss
+            }
+        }
+    }
+
+    if (hit)
+    {
+        printf("Hit!\n");
+    }
+    else
+    {
+        printf("Miss!\n");
+    }
+}
+
+void HardBotRadarSweep(int heatmap[10][10])
+{
+    int max = 0;
+    int x;
+    int y;
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            // Calculate sum of the 2x2 grid
+            for (int m = i; m <= i + 1; m++)
+            {
+                for (int n = j; n <= j + 1; n++)
+                {
+                    sum += heatmap[m][n];
+                }
+            }
+
+            // Update max and coordinates if a larger sum is found
+            if (sum > max)
+            {
+                max = sum;
+            }
+        }
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                    if (sum == max)
+                    {
+                        x = i;
+                        y = j;
+                    }
+                }
+            }
+        }
+    }
+
+    printf("Bot uses Radar Sweep at %c%d\n", 'A' + y, x + 1);
+
+    // set previous DetectedTargets boolean to false and the number of detected targets to check back to 0
+    bot.num_DetectedTargets_ToCheck = 0;
+    bot.DetectedTargets = false;
+    char ij[3]; // to store ij position to compare it to obscured positions
+
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            if (player.BattleGround[i][j] <= 4 && player.BattleGround[i][j] >= 1) // 1,2,3,4 represent ships
+            {
+                bot.DetectedTargets = true;
+                for (int k = 0; k < player.number_obscured_positions; k++)
+                {
+                    sprintf(ij, "%d%d", i, j);
+                    if (strcmp(player.obscured_areas[k], ij) == 0)
+                    {
+                        bot.DetectedTargets = false;
+                        break;
+                    }
+                }
+            }
+            if (bot.DetectedTargets == true)
+                break;
+        }
+        if (bot.DetectedTargets == true)
+            break;
+    }
+
+    if (bot.DetectedTargets == true)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == 0)
+            {
+                // Step 1: Keep x and y the same
+            }
+            else if (i == 1)
+            {
+                // Step 2: Increment x
+                x++;
+            }
+            else if (i == 2)
+            {
+                // Step 3: Increment both x and y
+                y++;
+            }
+            else if (i == 3)
+            {
+                // Step 4: Increment only y
+                x--; // this way we return x to its initial value
+            }
+
+            if (x >= 0 && x < 10 && y >= 0 && y < 10)
+            {
+                bot.detectedTargets[i][0] = x;
+                bot.detectedTargets[i][1] = y;
+                bot.num_DetectedTargets_ToCheck++;
+            }
+            else
+            {
+                // the spot is outside the grid
+                bot.detectedTargets[i][0] = -1;
+                bot.detectedTargets[i][1] = -1;
+            }
+        }
+        printf("Enemy ships found!\n");
+    }
+
+    else
+    {
+        printf("No enemy ships found!\n");
+    }
+    bot.radar_sweeps--;                   // Decrement radar sweeps after use
+    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
+    printf("\n");
+}
+
+void HardBotFire(const int heatmap[10][10])
+{
+    if (inAttackingMode == false)
+    {
+        int max = -1;
+        int x;
+        int y;
+        for (int i = 0; i < 10; i++)
+        {
+            for (int j = 0; j < 10; j++)
+            {
+                if (heatmap[i][j] > max)
+                {
+                    max = heatmap[i][j];
+                    x = i;
+                    y = j;
+                }
+            }
+        }
+        printf("Bot fires at %c%d!\n", 'A' + y, x + 1);
+
+        if (player.BattleGround[x][y] == 1 || player.BattleGround[x][y] == 2 || player.BattleGround[x][y] == 3 || player.BattleGround[x][y] == 4)
+        {
+            player.BattleGround[x][y] = 5;
+            inAttackingMode = true;
+            lastSpotHitIndex++;
+            alreadyHitSpots[lastSpotHitIndex][0] = x;
+            alreadyHitSpots[lastSpotHitIndex][1] = y;
+            adjacentHitSpots[numAdjacentHitSpots][0] = x; // saving potential adjacent ship spots
+            adjacentHitSpots[numAdjacentHitSpots][1] = y;
+            numAdjacentHitSpots++;
+            printf("Hit!\n");
+        }
+        else
+        {
+            player.BattleGround[x][y] = 6;
+            inAttackingMode = false;
+            printf("Miss!\n");
+        }
+        bot.number_obscured_positions = 0; // this is because the effect of smoke screen which
+                                           // the player potentially used expired after a turn
+    }
+
+    else //(in attacking mode)
+    {
+        int directions[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}}; // up, down, left, right
+        int lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
+        int lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
+        int newTargetX = -1;
+        int newTargetY = -1;
+
+        newTargetX = lastHitX + directions[checkedDirection][0];
+        newTargetY = lastHitY + directions[checkedDirection][1];
+
+        if (correctDirection2 == true && correctDirection == true)
+        {
+            if (checkBotHitValidity(newTargetX, newTargetY) == false || player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6)
+            {
+                // means we targeted in one direction and couldn't target in the other direction and
+                // we still didn't destroy a ship which means we targeted parts of different ships
+                are_adjacent_ships = true;
+            }
+        }
+
+        if (are_adjacent_ships == true && HittingAdjacent == false)
+        {
+            // we need to hit the adjacent ship
+            lastSpotHitIndex = 0;
+            alreadyHitSpots[lastSpotHitIndex][0] = adjacentHitSpots[numAdjacentHitSpots - 1][0];
+            alreadyHitSpots[lastSpotHitIndex][1] = adjacentHitSpots[numAdjacentHitSpots - 1][1];
+
+            lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
+            lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
+
+            newTargetX = lastHitX + directions[checkedDirection][0];
+            newTargetY = lastHitY + directions[checkedDirection][1];
+
+            HittingAdjacent = true;
+        }
+
+        orientation = getOrientation(newTargetX, lastHitX);
+        if (checkBotHitValidity(newTargetX, newTargetY) == false || player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6)
+        {
+            // the only time checkBotHitValidity() is false is when we are in attakind mode and try to hit
+            // a spot outside the grid which means we need to go opposite direction to stay on the grid
+            // and continue hitting the ship
+            lastSpotHitIndex = 0; // we return to the first spot we had hit on the ship
+            lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
+            lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
+
+            if (orientation == 'V')
+            {
+                // For vertical, 0 = "up" and 1 = "down"
+                checkedDirection = (checkedDirection == 0) ? 1 : 0; // Flip between "up" and "down"
+                newTargetX = lastHitX + directions[checkedDirection][0];
+                newTargetY = lastHitY + directions[checkedDirection][1];
+
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 2; // left
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 3; // right
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+            }
+            else if (orientation == 'H')
+            {
+                // For horizontal, 2 = "left" and 3 = "right"
+                checkedDirection = (checkedDirection == 2) ? 3 : 2; // Flip between "left" and "right"
+                newTargetX = lastHitX + directions[checkedDirection][0];
+                newTargetY = lastHitY + directions[checkedDirection][1];
+
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 0; // up
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 1; // down
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+            }
+            if (checkedDirection > 3)
+                checkedDirection = 0;
+        }
+
+        printf("Bot fires at %c%d!\n", 'A' + newTargetY, newTargetX + 1);
+
+        if (player.BattleGround[newTargetX][newTargetY] >= 1 && player.BattleGround[newTargetX][newTargetY] <= 4) // hit
+        {
+            player.BattleGround[newTargetX][newTargetY] = 5;
+            lastSpotHitIndex++;
+            alreadyHitSpots[lastSpotHitIndex][0] = newTargetX;
+            alreadyHitSpots[lastSpotHitIndex][1] = newTargetY;
+            adjacentHitSpots[numAdjacentHitSpots][0] = newTargetX; // saving potential adjacent ship spots
+            adjacentHitSpots[numAdjacentHitSpots][1] = newTargetY;
+            if (!are_adjacent_ships) // means we didn't get our adjacent ships yet
+            {
+                numAdjacentHitSpots++;
+            }
+            correctDirection = true;
+            NumSpotsHitAttackingMode++;
+            printf("Hit!\n\n");
+        }
+        else // miss
+        {
+            if (correctDirection2 == true && correctDirection == true)
+            {
+                are_adjacent_ships = true;
+                // means we targeted in both directions but didnt destroy a ship which means we
+                // targeted parts of different ships
+                correctDirection2 = false;
+                correctDirection = false;
+            }
+            else if (correctDirection == true) // means the direction was right but we could have started hitting the ship in the middle which is why we are missing now so we have to go the opposite direction now
+            {
+                correctDirection2 = true; // we are targeting in the opposite direction of the first direction
+                lastSpotHitIndex = 0;     // we return to the first spot we had hit on the ship
+                if (orientation == 'V')
+                {
+                    // For vertical, 0 = "up" and 1 = "down"
+                    checkedDirection = (checkedDirection == 0) ? 1 : 0; // Flip between "up" and "down"
+                }
+                else if (orientation == 'H')
+                {
+                    // For horizontal, 2 = "left" and 3 = "right"
+                    checkedDirection = (checkedDirection == 2) ? 3 : 2; // Flip between "left" and "right"
+                }
+                if (checkedDirection > 3)
+                    checkedDirection = 0;
+            }
+            else
+            {
+                checkedDirection++; // we try new direction
+                correctDirection = false;
+                if (checkedDirection > 3)
+                    checkedDirection = 0;
+            }
+            player.BattleGround[newTargetX][newTargetY] = 6;
+            printf("Miss!\n\n");
+        }
+    }
+}
+
+void HardBotSmokeScreen(int heatmap[10][10])
+{
+    int max = 0;
+    int x;
+    int y;
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            // Calculate sum of the 2x2 grid
+            for (int m = i; m <= i + 1; m++)
+            {
+                for (int n = j; n <= j + 1; n++)
+                {
+                    sum += heatmap[m][n];
+                }
+            }
+
+            // Update max and coordinates if a larger sum is found
+            if (sum > max)
+            {
+                max = sum;
+                x = i;
+                y = j;
+            }
+        }
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                    if (sum == max)
+                    {
+                        x = i;
+                        y = j;
+                    }
+                }
+            }
+        }
+    }
+
+    bot.number_obscured_positions = 0;
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            sprintf(bot.obscured_areas[bot.number_obscured_positions], "%d%d", i, j);
+            bot.number_obscured_positions++;
+        }
+    }
+
+    bot.smoke_screens--;
+    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
+}
+
+void HardBotMakeMove()
+{
+    getHeatMap(&player);
+
+    Counter++; // count of number of moves if we want to know that
+
+    if (player.destroyedAShipInPreviousTurn && bot.smoke_screens != 0)
+    {
+        HardBotSmokeScreen(bot.heatmap);
+        printf("Bot chooses to perform Smoke Screen!\n");
+        bot.torpedoUnlocked = false;
+        bot.destroyedAShipInPreviousTurn = false;
+    }
+
+    else if (bot.torpedoUnlocked) // if unlocked bot should use it and prioritize it over artillery
+    {
+        printf("Bot chooses to use Torpedo!\n");
+        HardBotTorpedo(player.heatmap);
+    }
+
+    else if (bot.destroyedAShipInPreviousTurn == 1)
+    {
+        BotRadar = true;
+        printf("Bot chooses to perform Artillery!\n");
+        HardBotArtillery(player.heatmap);
+    }
+
+    else if (bot.radar_sweeps != 0 && BotRadar == true)
+    {
+        printf("Bot chooses to perform Radar Sweep!\n");
+        HardBotRadarSweep(player.heatmap);
+        BotRadar = false;
+    }
+
+    else if (bot.DetectedTargets == true) // if bot found ships in radar sweep it should shoot there
+    {
+        // Prioritize targeting detected ships, so that if the bot uses radar sweep it won't continue hitting randomly (which would defeat the point of using radar sweep)
+        int targetX = -1;
+        int targetY = -1;
+        int targetIndex = -1;
+        while (targetX == -1 && targetY == -1)
+        {
+            targetIndex = rand() % 4; // because the number of ships found could be 4 max
+            targetX = bot.detectedTargets[targetIndex][0];
+            targetY = bot.detectedTargets[targetIndex][1];
+        }
+        bot.detectedTargets[targetIndex][0] = -1; // Remove the detected target position from detected
+        bot.detectedTargets[targetIndex][1] = -1; // targets (action is done so no need to keep it stored)
+        bot.num_DetectedTargets_ToCheck--;
+
+        printf("Bot fires at detected target %c%d\n", 'A' + targetY, targetX + 1);
+
+        if (player.BattleGround[targetX][targetY] >= 1 && player.BattleGround[targetX][targetY] <= 4)
+        {
+            player.BattleGround[targetX][targetY] = 5; // Hit
+            printf("Hit!\n");
+            adjacentHitSpots[numAdjacentHitSpots][0] = targetX; // saving potential adjacent ship spots
+            adjacentHitSpots[numAdjacentHitSpots][1] = targetY;
+            numAdjacentHitSpots++;
+            lastSpotHitIndex++;
+            alreadyHitSpots[lastSpotHitIndex][0] = targetX;
+            alreadyHitSpots[lastSpotHitIndex][1] = targetY;
+            inAttackingMode = true;
+        }
+        else
+        {
+            if (player.BattleGround[targetX][targetY] == 0)
+                player.BattleGround[targetX][targetY] = 6;
+            if (player.BattleGround[targetX][targetY] == 5)
+                player.BattleGround[targetX][targetY] = 5;
+            printf("Miss!\n");
+        }
+
+        if (bot.num_DetectedTargets_ToCheck == 0)
+        {
+            bot.DetectedTargets = false; // we finished checking all radar spots with potential ships
+        }
+    }
+
+    else
+    {
+        printf("Bot chooses to Fire!\n");
+        HardBotFire(player.heatmap);
+    }
+}
+
 void initializePlayers()
 {
     fillArrays(); // filling the battlegrounds of player and bot with 0s
@@ -917,12 +1686,20 @@ void initializePlayers()
     bot.torpedoUnlocked = 0;
     bot.torpedoAlreadyUnlocked = 0;
     bot.number_obscured_positions = 0;
+    // the following are specifically for the bot
+    inAttackingMode = false;
+    checkedDirection = 0;
+    alreadyHitSpots[14][2]; // it is ok to not initialize this as we will fill it later in BotFire()
+    lastSpotHitIndex = -1;
+    orientation = ' ';
+    correctDirection = false;
 
     // still have to get positions of ships of the player and the bot
     printf("Please enter the positions of your ships.\n");
     getPositions();
     clearScreen();
 
+    printf("The Bot is placing ships, please wait a moment...\n");
     BotGetPositions();
 }
 
@@ -1011,6 +1788,869 @@ void makeMove()
         printf("Unknown ability.\n");
     }
 }
+void MediumBotMakeMove()
+{
+    getHeatMap(&player);
+    Counter++; // count of number of moves if we want to know that
+
+    if (player.destroyedAShipInPreviousTurn && bot.smoke_screens != 0)
+    {
+        MediumBotSmokeScreen(bot.heatmap);
+        printf("Bot chooses to perform Smoke Screen!\n");
+        bot.torpedoUnlocked = false;
+        bot.destroyedAShipInPreviousTurn = false;
+    }
+
+    else if (bot.torpedoUnlocked) // if unlocked bot should use it and prioritize it over artillery
+    {
+        printf("Bot chooses to use Torpedo!\n");
+        MediumBotTorpedo(player.heatmap);
+    }
+
+    else if (bot.destroyedAShipInPreviousTurn == 1)
+    {
+        BotRadar = true;
+        printf("Bot chooses to perform Artillery!\n");
+        MediumBotArtillery(player.heatmap);
+    }
+
+    else if (bot.radar_sweeps != 0 && BotRadar == true)
+    {
+        printf("Bot chooses to perform Radar Sweep!\n");
+        MediumBotRadarSweep(player.heatmap);
+        BotRadar = false;
+    }
+
+    else if (bot.DetectedTargets == true) // if bot found ships in radar sweep it should shoot there
+    {
+        // Prioritize targeting detected ships, so that if the bot uses radar sweep it won't continue hitting randomly (which would defeat the point of using radar sweep)
+        int targetX = -1;
+        int targetY = -1;
+        int targetIndex = -1;
+        while (targetX == -1 && targetY == -1)
+        {
+            targetIndex = rand() % 4; // because the number of ships found could be 4 max
+            targetX = bot.detectedTargets[targetIndex][0];
+            targetY = bot.detectedTargets[targetIndex][1];
+        }
+        bot.detectedTargets[targetIndex][0] = -1; // Remove the detected target position from detected
+        bot.detectedTargets[targetIndex][1] = -1; // targets (action is done so no need to keep it stored)
+        bot.num_DetectedTargets_ToCheck--;
+
+        printf("Bot fires at detected target %c%d\n", 'A' + targetY, targetX + 1);
+
+        if (player.BattleGround[targetX][targetY] >= 1 && player.BattleGround[targetX][targetY] <= 4)
+        {
+            player.BattleGround[targetX][targetY] = 5; // Hit
+            printf("Hit!\n");
+             adjacentHitSpots[numAdjacentHitSpots][0] = targetX; // saving potential adjacent ship spots
+            adjacentHitSpots[numAdjacentHitSpots][1] = targetY;
+            numAdjacentHitSpots++;
+            lastSpotHitIndex++;
+            alreadyHitSpots[lastSpotHitIndex][0] = targetX;
+            alreadyHitSpots[lastSpotHitIndex][1] = targetY;
+            inAttackingMode = true;
+        }
+        else
+        {
+            if (player.BattleGround[targetX][targetY] == 0)
+                player.BattleGround[targetX][targetY] = 6;
+            if (player.BattleGround[targetX][targetY] == 5)
+                player.BattleGround[targetX][targetY] = 5;
+            printf("Miss!\n");
+        }
+
+        if (bot.num_DetectedTargets_ToCheck == 0)
+        {
+            bot.DetectedTargets = false; // we finished checking all radar spots with potential ships
+        }
+    }
+
+    else
+    {
+        printf("Bot chooses to Fire!\n");
+        MediumBotFire(player.heatmap);
+    }
+}
+
+void MediumBotRadarSweep(int heatmap[10][10])
+{
+    int max1 = 0;
+    int max2 = 0;
+    int max3 = 0;
+    int x;
+    int y;
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                }
+            }
+            if (sum >= max3)
+            {
+                if (sum >= max2)
+                {
+                    if (sum >= max1)
+                    {
+                        max3 = max2;
+                        max2 = max1;
+                        max1 = sum;
+                    }
+                    else
+                    {
+                        max3 = max2;
+                        max2 = sum;
+                    }
+                }
+                else
+                {
+                    max3 = sum;
+                }
+            }
+        }
+    }
+
+    int target_sum;
+    if (max3 != 0)
+    {
+        target_sum = max3;
+    }
+    else if (max2 != 0)
+    {
+        target_sum = max2;
+    }
+    else
+    {
+        target_sum = max1;
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                    if (sum == target_sum)
+                    {
+                        x = i;
+                        y = j;
+                    }
+                }
+            }
+        }
+    }
+
+    printf("Bot uses Radar Sweep at %c%d\n", 'A' + y, x + 1);
+
+    // set previous DetectedTargets boolean to false and the number of detected targets to check back to 0
+    bot.num_DetectedTargets_ToCheck = 0;
+    bot.DetectedTargets = false;
+    char ij[3]; // to store ij position to compare it to obscured positions
+
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            if (player.BattleGround[i][j] <= 4 && player.BattleGround[i][j] >= 1) // 1,2,3,4 represent ships
+            {
+                bot.DetectedTargets = true;
+                for (int k = 0; k < player.number_obscured_positions; k++)
+                {
+                    sprintf(ij, "%d%d", i, j);
+                    if (strcmp(player.obscured_areas[k], ij) == 0)
+                    {
+                        bot.DetectedTargets = false;
+                        break;
+                    }
+                }
+            }
+            if (bot.DetectedTargets == true)
+                break;
+        }
+        if (bot.DetectedTargets == true)
+            break;
+    }
+
+    if (bot.DetectedTargets == true)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == 0)
+            {
+                // Step 1: Keep x and y the same
+            }
+            else if (i == 1)
+            {
+                // Step 2: Increment x
+                x++;
+            }
+            else if (i == 2)
+            {
+                // Step 3: Increment both x and y
+                y++;
+            }
+            else if (i == 3)
+            {
+                // Step 4: Increment only y
+                x--; // this way we return x to its initial value
+            }
+
+            if (x >= 0 && x < 10 && y >= 0 && y < 10)
+            {
+                bot.detectedTargets[i][0] = x;
+                bot.detectedTargets[i][1] = y;
+                bot.num_DetectedTargets_ToCheck++;
+            }
+            else
+            {
+                // the spot is outside the grid
+                bot.detectedTargets[i][0] = -1;
+                bot.detectedTargets[i][1] = -1;
+            }
+        }
+        printf("Enemy ships found!\n");
+    }
+
+    else
+    {
+        printf("No enemy ships found!\n");
+    }
+
+    bot.radar_sweeps--;                   // Decrement radar sweeps after use
+    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
+    printf("\n");
+}
+void MediumBotFire(const int heatmap[10][10])
+{
+    if (inAttackingMode == false)
+    {
+        int max = -1;
+        int second_max = -1;
+        int third_max = -1;
+        int x;
+        int y;
+
+        for (int i = 0; i < 10; i++)
+        {
+            for (int j = 0; j < 10; j++)
+            {
+                int current = heatmap[i][j];
+
+                if (current > max)
+                {
+                    // Shift down max hierarchy
+                    third_max = second_max;
+                    second_max = max;
+                    max = current;
+                }
+                else if (current > second_max && current < max)
+                {
+                    third_max = second_max;
+                    second_max = current;
+                }
+                else if (current > third_max && current < second_max)
+                {
+                    third_max = current;
+                }
+            }
+        }
+
+        int target;
+        if (third_max != 0)
+        {
+            target = third_max;
+        }
+        else if (second_max != 0)
+        {
+            target = second_max;
+        }
+        else
+        {
+            target = max;
+        }
+
+        for (int i = 0; i < 10; i++)
+        {
+            for (int j = 0; j < 10; j++)
+            {
+                if (heatmap[i][j] == target)
+                {
+                    x = i;
+                    y = j;
+                    break;
+                }
+            }
+        }
+        printf("Bot fires at %c%d!\n", 'A' + y, x + 1);
+
+        if (player.BattleGround[x][y] == 1 || player.BattleGround[x][y] == 2 || player.BattleGround[x][y] == 3 || player.BattleGround[x][y] == 4)
+        {
+            player.BattleGround[x][y] = 5;
+            inAttackingMode = true;
+            lastSpotHitIndex++;
+            alreadyHitSpots[lastSpotHitIndex][0] = x;
+            alreadyHitSpots[lastSpotHitIndex][1] = y;
+            adjacentHitSpots[numAdjacentHitSpots][0] = x; // saving potential adjacent ship spots
+            adjacentHitSpots[numAdjacentHitSpots][1] = y;
+            numAdjacentHitSpots++;
+            printf("Hit!\n");
+        }
+        else
+        {
+            player.BattleGround[x][y] = 6;
+            inAttackingMode = false;
+            printf("Miss!\n");
+        }
+        bot.number_obscured_positions = 0; // this is because the effect of smoke screen which
+                                           // the player potentially used expired after a turn
+    }
+
+    else //(in attacking mode)
+    {
+        int directions[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}}; // up, down, left, right
+        int lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
+        int lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
+        int newTargetX = -1;
+        int newTargetY = -1;
+
+        newTargetX = lastHitX + directions[checkedDirection][0];
+        newTargetY = lastHitY + directions[checkedDirection][1];
+
+        if (correctDirection2 == true && correctDirection == true)
+        {
+            if (checkBotHitValidity(newTargetX, newTargetY) == false || player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6)
+            {
+                // means we targeted in one direction and couldn't target in the other direction and
+                // we still didn't destroy a ship which means we targeted parts of different ships
+                are_adjacent_ships = true;
+            }
+        }
+
+        if (are_adjacent_ships == true && HittingAdjacent == false)
+        {
+            // we need to hit the adjacent ship
+            lastSpotHitIndex = 0;
+            alreadyHitSpots[lastSpotHitIndex][0] = adjacentHitSpots[numAdjacentHitSpots - 1][0];
+            alreadyHitSpots[lastSpotHitIndex][1] = adjacentHitSpots[numAdjacentHitSpots - 1][1];
+
+            lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
+            lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
+
+            newTargetX = lastHitX + directions[checkedDirection][0];
+            newTargetY = lastHitY + directions[checkedDirection][1];
+
+            HittingAdjacent = true;
+        }
+
+        orientation = getOrientation(newTargetX, lastHitX);
+        if (checkBotHitValidity(newTargetX, newTargetY) == false || player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6)
+        {
+            // the only time checkBotHitValidity() is false is when we are in attakind mode and try to hit
+            // a spot outside the grid which means we need to go opposite direction to stay on the grid
+            // and continue hitting the ship
+            lastSpotHitIndex = 0; // we return to the first spot we had hit on the ship
+            lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
+            lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
+
+            if (orientation == 'V')
+            {
+                // For vertical, 0 = "up" and 1 = "down"
+                checkedDirection = (checkedDirection == 0) ? 1 : 0; // Flip between "up" and "down"
+                newTargetX = lastHitX + directions[checkedDirection][0];
+                newTargetY = lastHitY + directions[checkedDirection][1];
+
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 2; // left
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 3; // right
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+            }
+            else if (orientation == 'H')
+            {
+                // For horizontal, 2 = "left" and 3 = "right"
+                checkedDirection = (checkedDirection == 2) ? 3 : 2; // Flip between "left" and "right"
+                newTargetX = lastHitX + directions[checkedDirection][0];
+                newTargetY = lastHitY + directions[checkedDirection][1];
+
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 0; // up
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
+                {
+                    // means we already shot there and should change direction or the spot is outside the grid
+                    checkedDirection = 1; // down
+                    newTargetX = lastHitX + directions[checkedDirection][0];
+                    newTargetY = lastHitY + directions[checkedDirection][1];
+                }
+            }
+        }
+
+        printf("Bot fires at %c%d!\n", 'A' + newTargetY, newTargetX + 1);
+
+        if (player.BattleGround[newTargetX][newTargetY] >= 1 && player.BattleGround[newTargetX][newTargetY] <= 4) // hit
+        {
+            player.BattleGround[newTargetX][newTargetY] = 5;
+            lastSpotHitIndex++;
+            alreadyHitSpots[lastSpotHitIndex][0] = newTargetX;
+            alreadyHitSpots[lastSpotHitIndex][1] = newTargetY;
+            adjacentHitSpots[numAdjacentHitSpots][0] = newTargetX; // saving potential adjacent ship spots
+            adjacentHitSpots[numAdjacentHitSpots][1] = newTargetY;
+            if (!are_adjacent_ships) // means we didn't get our adjacent ships yet
+            {
+                numAdjacentHitSpots++;
+            }
+            correctDirection = true;
+            NumSpotsHitAttackingMode++;
+            printf("Hit!\n\n");
+        }
+        else // miss
+        {
+            if (correctDirection2 == true && correctDirection == true)
+            {
+                are_adjacent_ships = true;
+                // means we targeted in both directions but didnt destroy a ship which means we
+                // targeted parts of different ships
+                correctDirection2 = false;
+                correctDirection = false;
+            }
+            else if (correctDirection == true) // means the direction was right but we could have started hitting the ship in the middle which is why we are missing now so we have to go the opposite direction now
+            {
+                correctDirection2 = true; // we are targeting in the opposite direction of the first direction
+                lastSpotHitIndex = 0;     // we return to the first spot we had hit on the ship
+                if (orientation == 'V')
+                {
+                    // For vertical, 0 = "up" and 1 = "down"
+                    checkedDirection = (checkedDirection == 0) ? 1 : 0; // Flip between "up" and "down"
+                }
+                else if (orientation == 'H')
+                {
+                    // For horizontal, 2 = "left" and 3 = "right"
+                    checkedDirection = (checkedDirection == 2) ? 3 : 2; // Flip between "left" and "right"
+                }
+            }
+            else
+            {
+                checkedDirection++; // we try new direction
+                correctDirection = false;
+            }
+            player.BattleGround[newTargetX][newTargetY] = 6;
+            printf("Miss!\n\n");
+        }
+    }
+}
+
+void MediumBotSmokeScreen(int heatmap[10][10])
+{
+    int max1 = 0;
+    int max2 = 0;
+    int max3 = 0;
+    int x;
+    int y;
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                }
+            }
+            if (sum >= max3)
+            {
+                if (sum >= max2)
+                {
+                    if (sum >= max1)
+                    {
+                        max3 = max2;
+                        max2 = max1;
+                        max1 = sum;
+                    }
+                    else
+                    {
+                        max3 = max2;
+                        max2 = sum;
+                    }
+                }
+                else
+                {
+                    max3 = sum;
+                }
+            }
+        }
+    }
+
+    int target_sum;
+    if (max3 != 0)
+    {
+        target_sum = max3;
+    }
+    else if (max2 != 0)
+    {
+        target_sum = max2;
+    }
+    else
+    {
+        target_sum = max1;
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                    if (sum == target_sum)
+                    {
+                        x = i;
+                        y = j;
+                    }
+                }
+            }
+        }
+    }
+    bot.number_obscured_positions = 0;
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            sprintf(bot.obscured_areas[bot.number_obscured_positions], "%d%d", i, j);
+            bot.number_obscured_positions++;
+        }
+    }
+
+    bot.smoke_screens--;
+    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
+}
+void MediumBotArtillery(int heatmap[10][10])
+{
+    bool hit = false;
+    int max1 = 0;
+    int max2 = 0;
+    int max3 = 0;
+    int x;
+    int y;
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                }
+            }
+            if (sum >= max3)
+            {
+                if (sum >= max2)
+                {
+                    if (sum >= max1)
+                    {
+                        max3 = max2;
+                        max2 = max1;
+                        max1 = sum;
+                    }
+                    else
+                    {
+                        max3 = max2;
+                        max2 = sum;
+                    }
+                }
+                else
+                {
+                    max3 = sum;
+                }
+            }
+        }
+    }
+
+    int target_sum;
+    if (max3 != 0)
+    {
+        target_sum = max3;
+    }
+    else if (max2 != 0)
+    {
+        target_sum = max2;
+    }
+    else
+    {
+        target_sum = max1;
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 10; j++)
+        {
+            int sum = 0;
+            for (int m = i; m <= i + 1 && m < 10; m++)
+            {
+                for (int n = j; n <= j + 1 && n < 10; n++)
+                {
+                    sum = sum + heatmap[m][n];
+                    if (sum == target_sum)
+                    {
+                        x = i;
+                        y = j;
+                    }
+                }
+            }
+        }
+    }
+
+    printf("Bot uses Artillery at %c%d!\n", 'A' + y, x + 1);
+
+    for (int i = x; i <= x + 1 && i < 10; i++)
+    {
+        for (int j = y; j <= y + 1 && j < 10; j++)
+        {
+            if (player.BattleGround[i][j] != 0 && player.BattleGround[i][j] != 5 && player.BattleGround[i][j] != 6)
+            {
+                hit = true;
+                player.BattleGround[i][j] = 5;
+                adjacentHitSpots[numAdjacentHitSpots][0] = i; // saving potential adjacent ship spots
+                adjacentHitSpots[numAdjacentHitSpots][1] = j;
+                numAdjacentHitSpots++;
+                lastSpotHitIndex++;
+                alreadyHitSpots[lastSpotHitIndex][0] = i;
+                alreadyHitSpots[lastSpotHitIndex][1] = j;
+                inAttackingMode = true;
+            }
+            else if (player.BattleGround[i][j] == 0)
+            {
+                player.BattleGround[i][j] = 6;
+            }
+            else if (player.BattleGround[i][j] == 5 || player.BattleGround[i][j] == 6)
+            {
+                printf("Already targeted this location!\n");
+            }
+        }
+    }
+    if (hit)
+    {
+        printf("Hit!\n");
+    }
+    else
+    {
+        printf("Miss!\n");
+    }
+    bot.destroyedAShipInPreviousTurn = 0;
+    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
+}
+
+void MediumBotTorpedo(int heatmap[10][10])
+{
+    int maxRowSum1 = 0, maxRowSum2 = 0, maxRowSum3 = 0, maxRowIdx = -1;
+    int maxColSum1 = 0, maxColSum2 = 0, maxColSum3 = 0, maxColIdx = -1;
+    bool hit = false;
+
+    // Calculate row sums
+    for (int i = 0; i < 10; i++)
+    {
+        int rowSum = 0;
+        for (int j = 0; j < 10; j++)
+        {
+            rowSum += heatmap[i][j];
+        }
+        if (rowSum >= maxRowSum3)
+        {
+            if (rowSum >= maxRowSum2)
+            {
+                if (rowSum >= maxRowSum1)
+                {
+                    maxRowSum3 = maxRowSum2;
+                    maxRowSum2 = maxRowSum1;
+                    maxRowSum1 = rowSum;
+                }
+                else
+                {
+                    maxRowSum3 = maxRowSum2;
+                    maxRowSum2 = rowSum;
+                }
+            }
+            else
+            {
+                maxRowSum3 = rowSum;
+            }
+        }
+    }
+
+    // Calculate column sums
+    for (int j = 0; j < 10; j++)
+    {
+        int colSum = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            colSum += heatmap[i][j];
+        }
+        if (colSum >= maxColSum3)
+        {
+            if (colSum >= maxColSum2)
+            {
+                if (colSum >= maxColSum1)
+                {
+                    maxColSum3 = maxColSum2;
+                    maxColSum2 = maxColSum1;
+                    maxColSum1 = colSum;
+                }
+                else
+                {
+                    maxColSum3 = maxColSum2;
+                    maxColSum2 = colSum;
+                }
+            }
+            else
+            {
+                maxColSum3 = colSum;
+            }
+        }
+    }
+
+    int target_row;
+    if (maxRowSum3 != 0)
+    {
+        target_row = maxRowSum3;
+    }
+    else if (maxRowSum2 != 0)
+    {
+        target_row = maxRowSum2;
+    }
+    else
+    {
+        target_row = maxRowSum1;
+    }
+    for (int i = 0; i < 10; i++)
+    {
+        int rowSum = 0;
+        for (int j = 0; j < 10; j++)
+        {
+            rowSum += heatmap[i][j];
+        }
+        if (rowSum == target_row)
+        {
+            maxRowIdx = i;
+        }
+    }
+
+    int target_column;
+    if (maxColSum3 != 0)
+    {
+        target_column = maxColSum3;
+    }
+    else if (maxColSum2 != 0)
+    {
+        target_column = maxColSum2;
+    }
+    else
+    {
+        target_column = maxColSum1;
+    }
+
+    for (int j = 0; j < 10; j++)
+    {
+        int colSum = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            colSum += heatmap[i][j];
+        }
+        if (colSum == target_column)
+        {
+            maxRowIdx = j;
+        }
+    }
+
+    if (target_row >= target_column)
+    {
+        printf("Bot uses Torpedo at %d\n", 1 + maxRowIdx);
+        for (int i = 0; i < 10; i++)
+        {
+            if (player.BattleGround[maxRowIdx][i] >= 1 && player.BattleGround[maxRowIdx][i] <= 4)
+            {
+                player.BattleGround[maxRowIdx][i] = 5; // 5 means hit
+                hit = true;
+                adjacentHitSpots[numAdjacentHitSpots][0] = maxRowIdx; // saving potential adjacent ship spots
+                adjacentHitSpots[numAdjacentHitSpots][1] = i;
+                numAdjacentHitSpots++;
+                lastSpotHitIndex++;
+                alreadyHitSpots[lastSpotHitIndex][0] = maxRowIdx;
+                alreadyHitSpots[lastSpotHitIndex][1] = i;
+                inAttackingMode = true;
+            }
+            else if (player.BattleGround[maxRowIdx][i] == 0)
+            {
+                player.BattleGround[maxRowIdx][i] = 6; // 6 means miss
+            }
+        }
+    }
+
+    else
+    {
+        printf("Bot uses Torpedo at %c\n", 'A' + maxColIdx);
+        for (int i = 0; i < 10; i++)
+        {
+            if (player.BattleGround[i][maxColIdx] >= 1 && player.BattleGround[i][maxColIdx] <= 4)
+            {
+                player.BattleGround[i][maxColIdx] = 5; // 5 means hit
+                hit = true;
+                adjacentHitSpots[numAdjacentHitSpots][0] = i; // saving potential adjacent ship spots
+                adjacentHitSpots[numAdjacentHitSpots][1] = maxColIdx;
+                numAdjacentHitSpots++;
+                lastSpotHitIndex++;
+                alreadyHitSpots[lastSpotHitIndex][0] = i;
+                alreadyHitSpots[lastSpotHitIndex][1] = maxColIdx;
+                inAttackingMode = true;
+            }
+            else if (player.BattleGround[i][maxColIdx] == 0)
+            {
+                player.BattleGround[i][maxColIdx] = 6; // 6 means miss
+            }
+        }
+    }
+
+    if (hit)
+    {
+        printf("Hit!\n");
+    }
+    else
+    {
+        printf("Miss!\n");
+    }
+
+    bot.torpedoUnlocked = false;
+    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
+}
+
 void performRadarSweep(int x, int y)
 {
     if (player.radar_sweeps == 0)
@@ -1256,63 +2896,6 @@ void updateBattleField(char BattleGround[10][10], char position[], char orientat
     }
 }
 
-void getHeatMap(Player *realPlayer)
-{
-    for (int i = 0; i < 10; i++) // this is to reset the heatmap
-    {
-        for (int j = 0; j < 10; j++)
-        {
-            realPlayer->heatmap[i][j] = 0;
-        }
-    }
-
-    for (int m = 1; m < 5; m++)
-    {
-        if (realPlayer->DestroyedShips[m] == false)
-        {
-            for (int i = 0; i < 10; i++)
-            {
-                for (int j = 0; j < 10; j++)
-                {
-                    if (checkHeatMapPlacementValidity(i, j, realPlayer->BattleGround, 6 - m, 'H') == true)
-                    {
-                        UpdateHeapMap(realPlayer->heatmap, i, j, 6 - m, 'H');
-                    }
-                    if (checkHeatMapPlacementValidity(i, j, realPlayer->BattleGround, 6 - m, 'V') == true)
-                    {
-                        UpdateHeapMap(realPlayer->heatmap, i, j, 6 - m, 'V');
-                    }
-                }
-            }
-        }
-    }
-}
-
-bool checkHeatMapPlacementValidity(int x, int y, char battlefield[10][10], int lengthOfCarrier, char orientation)
-{
-    if (orientation == 'V')
-    {
-        for (int i = x; i < x + lengthOfCarrier; i++)
-        {
-            if (i >= 10 || battlefield[i][y] == 5 || battlefield[i][y] == 6)
-            {
-                return false;
-            }
-        }
-    }
-    else if (orientation == 'H')
-    {
-        for (int i = y; i < y + lengthOfCarrier; i++)
-        {
-            if (i >= 10 || battlefield[x][i] == 5 || battlefield[x][i] == 6)
-            {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
 void UpdateHeapMap(int heatmap[10][10], int x, int y, int lengthOfCarrier, char orientation)
 {
     if (orientation == 'V') // very simple updating vertically/horizontally using length of the carriers
@@ -1329,754 +2912,4 @@ void UpdateHeapMap(int heatmap[10][10], int x, int y, int lengthOfCarrier, char 
             heatmap[x][i]++;
         }
     }
-}
-
-bool checkBotHitValidity(int x, int y)
-{
-    if (x >= 10 || y >= 10 || x < 0 || y < 0)
-    {
-        return false;
-    }
-    return true;
-}
-
-char getOrientation(int newX, int oldX)
-{
-    if ((oldX - newX) != 0)
-    {
-        return 'V';
-    }
-    else
-    {
-        return 'H';
-    }
-}
-
-void MediumBotMakeMove()
-{
-    getHeatMap(&player);
-    Counter++;
-
-    if (bot.torpedoUnlocked) // if unlocked bot should use it and prioritize it over artillery
-    {
-        printf("Bot chooses to use Torpedo!\n");
-        MediumBotTorpedo(player.heatmap);
-    }
-    else if (bot.destroyedAShipInPreviousTurn == 1) // if artillery is unlocked bot should use it
-    {
-        printf("Bot chooses to perform Artillery!\n");
-        MediumBotArtillery(player.heatmap);
-    }
-    else if (bot.DetectedTargets == true) // if bot found ships in radar sweep it should shoot there
-    {
-        // Prioritize targeting detected ships
-        int targetX = -1;
-        int targetY = -1;
-        int targetIndex = 0;
-        while (targetX == -1 && targetY == -1)
-        {
-            targetX = bot.detectedTargets[targetIndex][0];
-            targetY = bot.detectedTargets[targetIndex][1];
-            targetIndex++;
-        }
-        bot.detectedTargets[targetIndex][0] = -1; // Remove the detected target position from detected
-        bot.detectedTargets[targetIndex][1] = -1; // targets (action is done so no need to keep it stored)
-        bot.num_DetectedTargets_ToCheck--;
-
-        printf("Bot fires at detected target %c%d\n", 'A' + targetY, targetX + 1);
-
-        if (player.BattleGround[targetX][targetY] >= 1 && player.BattleGround[targetX][targetY] <= 4)
-        {
-            player.BattleGround[targetX][targetY] = 5; // Hit
-            printf("Hit!\n");
-        }
-        else
-        {
-            if (player.BattleGround[targetX][targetY] == 0)
-                player.BattleGround[targetX][targetY] = 6;
-            if (player.BattleGround[targetX][targetY] == 5)
-                player.BattleGround[targetX][targetY] = 5;
-            printf("Miss!\n");
-        }
-
-        if (bot.num_DetectedTargets_ToCheck == 0)
-        {
-            bot.DetectedTargets = false; // we finished checking all radar spots with potential ships
-        }
-    }
-
-    else
-    {
-
-        if (inAttackingMode == true)
-        {
-            MediumBotFire(player.heatmap);
-        }
-        else // inAttackingMode == false
-        {
-            if (Counter >= 4 && Counter % 2 == 0 && bot.radar_sweeps != 0)
-            {
-                MediumBotRadarSweep(player.heatmap);
-            }
-            else if (Counter >= 4 && Counter % 4 == 0 && bot.smoke_screens != 0)
-            {
-                MediumBotSmokeScreen(bot.heatmap);
-            }
-            else
-            {
-                MediumBotFire(player.heatmap);
-            }
-        }
-    }
-}
-void MediumBotRadarSweep(int heatmap[10][10])
-{
-    int max1 = 0;
-    int max2 = 0;
-    int max3 = 0;
-    int x;
-    int y;
-    for (int i = 0; i < 10; i++)
-    {
-        for (int j = 0; j < 10; j++)
-        {
-            int sum = 0;
-            for (int m = i; m <= i + 1 && m < 10; m++)
-            {
-                for (int n = j; n <= j + 1 && n < 10; n++)
-                {
-                    sum = sum + heatmap[m][n];
-                }
-            }
-            if (sum >= max3)
-            {
-                if (sum >= max2)
-                {
-                    if (sum >= max1)
-                    {
-                        max3 = max2;
-                        max2 = max1;
-                        max1 = sum;
-                    }
-                    else
-                    {
-                        max3 = max2;
-                        max2 = sum;
-                    }
-                }
-                else
-                {
-                    max3 = sum;
-                }
-            }
-        }
-    }
-    for (int i = 0; i < 10; i++)
-    {
-        for (int j = 0; j < 10; j++)
-        {
-            int sum = 0;
-            for (int m = i; m <= i + 1 && m < 10; m++)
-            {
-                for (int n = j; n <= j + 1 && n < 10; n++)
-                {
-                    sum = sum + heatmap[m][n];
-                    if (sum == max3)
-                    {
-                        x = i;
-                        y = j;
-                    }
-                }
-            }
-        }
-    }
-
-    printf("Bot uses Radar Sweep at %c%d\n", 'A' + y, x + 1);
-
-    // set previous DetectedTargets boolean to false and the number of detected targets to check back to 0
-    bot.num_DetectedTargets_ToCheck = 0;
-    bot.DetectedTargets = false;
-    char ij[3]; // to store ij position to compare it to obscured positions
-
-    for (int i = x; i <= x + 1 && i < 10; i++)
-    {
-        for (int j = y; j <= y + 1 && j < 10; j++)
-        {
-            if (player.BattleGround[i][j] <= 4 && player.BattleGround[i][j] >= 1) // 1,2,3,4 represent ships
-            {
-                bot.DetectedTargets = true;
-                for (int k = 0; k < player.number_obscured_positions; k++)
-                {
-                    sprintf(ij, "%d%d", i, j);
-                    if (strcmp(player.obscured_areas[k], ij) == 0)
-                    {
-                        bot.DetectedTargets = false;
-                        break;
-                    }
-                }
-            }
-            if (bot.DetectedTargets == true)
-                break;
-        }
-        if (bot.DetectedTargets == true)
-            break;
-    }
-
-    if (bot.DetectedTargets == true)
-    {
-        for (int i = 0; i < 4; i++)
-        {
-            if (i == 0)
-            {
-                // Step 1: Keep x and y the same
-            }
-            else if (i == 1)
-            {
-                // Step 2: Increment x
-                x++;
-            }
-            else if (i == 2)
-            {
-                // Step 3: Increment both x and y
-                y++;
-            }
-            else if (i == 3)
-            {
-                // Step 4: Increment only y
-                x--; // this way we return x to its initial value
-            }
-
-            if (x >= 0 && x < 10 && y >= 0 && y < 10)
-            {
-                bot.detectedTargets[i][0] = x;
-                bot.detectedTargets[i][1] = y;
-                bot.num_DetectedTargets_ToCheck++;
-            }
-            else
-            {
-                // the spot is outside the grid
-                bot.detectedTargets[i][0] = -1;
-                bot.detectedTargets[i][1] = -1;
-            }
-        }
-        printf("Enemy ships found!\n");
-    }
-
-    else
-    {
-        printf("No enemy ships found!\n");
-    }
-
-    bot.radar_sweeps--;                   // Decrement radar sweeps after use
-    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
-    printf("\n");
-}
-void MediumBotFire(const int heatmap[10][10])
-{
-    if (inAttackingMode == false)
-    {
-        int max = -1;
-        int second_max = -1;
-        int third_max = -1;
-        int x;
-        int y;
-
-        for (int i = 0; i < 10; i++)
-        {
-            for (int j = 0; j < 10; j++)
-            {
-                int current = heatmap[i][j];
-
-                if (current > max)
-                {
-                    // Shift down max hierarchy
-                    third_max = second_max;
-                    second_max = max;
-                    max = current;
-                }
-                else if (current > second_max && current < max)
-                {
-                    third_max = second_max;
-                    second_max = current;
-                }
-                else if (current > third_max && current < second_max)
-                {
-                    third_max = current;
-                }
-            }
-        }
-
-        for (int i = 0; i < 10; i++)
-        {
-            for (int j = 0; j < 10; j++)
-            {
-                if (heatmap[i][j] == third_max)
-                {
-                    x = i;
-                    y = j;
-                    break;
-                }
-            }
-        }
-
-        if (player.BattleGround[x][y] == 1 || player.BattleGround[x][y] == 2 || player.BattleGround[x][y] == 3 || player.BattleGround[x][y] == 4)
-        {
-            player.BattleGround[x][y] = 5;
-            inAttackingMode = true;
-            lastSpotHitIndex++;
-            alreadyHitSpots[lastSpotHitIndex][0] = x;
-            alreadyHitSpots[lastSpotHitIndex][1] = y;
-            adjacentHitSpots[numAdjacentHitSpots][0] = x; // saving potential adjacent ship spots
-            adjacentHitSpots[numAdjacentHitSpots][1] = y;
-            numAdjacentHitSpots++;
-            printf("Hit!\n");
-        }
-        else
-        {
-            player.BattleGround[x][y] = 6;
-            inAttackingMode = false;
-            printf("Miss!\n");
-        }
-        bot.number_obscured_positions = 0; // this is because the effect of smoke screen which
-                                           // the player potentially used expired after a turn
-    }
-
-    else //(in attacking mode)
-    {
-        int directions[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}}; // up, down, left, right
-        int lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
-        int lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
-        int newTargetX = -1;
-        int newTargetY = -1;
-
-        newTargetX = lastHitX + directions[checkedDirection][0];
-        newTargetY = lastHitY + directions[checkedDirection][1];
-
-        if (correctDirection2 == true && correctDirection == true)
-        {
-            if (checkBotHitValidity(newTargetX, newTargetY) == false || player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6)
-            {
-                // means we targeted in one direction and couldn't target in the other direction and
-                // we still didn't destroy a ship which means we targeted parts of different ships
-                are_adjacent_ships = true;
-            }
-        }
-
-        if (are_adjacent_ships == true && HittingAdjacent == false)
-        {
-            // we need to hit the adjacent ship
-            lastSpotHitIndex = 0;
-            alreadyHitSpots[lastSpotHitIndex][0] = adjacentHitSpots[numAdjacentHitSpots - 1][0];
-            alreadyHitSpots[lastSpotHitIndex][1] = adjacentHitSpots[numAdjacentHitSpots - 1][1];
-
-            lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
-            lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
-
-            newTargetX = lastHitX + directions[checkedDirection][0];
-            newTargetY = lastHitY + directions[checkedDirection][1];
-
-            HittingAdjacent = true;
-        }
-
-        orientation = getOrientation(newTargetX, lastHitX);
-        if (checkBotHitValidity(newTargetX, newTargetY) == false || player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6)
-        {
-            // the only time checkBotHitValidity() is false is when we are in attakind mode and try to hit
-            // a spot outside the grid which means we need to go opposite direction to stay on the grid
-            // and continue hitting the ship
-            lastSpotHitIndex = 0; // we return to the first spot we had hit on the ship
-            lastHitX = alreadyHitSpots[lastSpotHitIndex][0];
-            lastHitY = alreadyHitSpots[lastSpotHitIndex][1];
-
-            if (orientation == 'V')
-            {
-                // For vertical, 0 = "up" and 1 = "down"
-                checkedDirection = (checkedDirection == 0) ? 1 : 0; // Flip between "up" and "down"
-                newTargetX = lastHitX + directions[checkedDirection][0];
-                newTargetY = lastHitY + directions[checkedDirection][1];
-
-                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
-                {
-                    // means we already shot there and should change direction or the spot is outside the grid
-                    checkedDirection = 2; // left
-                    newTargetX = lastHitX + directions[checkedDirection][0];
-                    newTargetY = lastHitY + directions[checkedDirection][1];
-                }
-                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
-                {
-                    // means we already shot there and should change direction or the spot is outside the grid
-                    checkedDirection = 3; // right
-                    newTargetX = lastHitX + directions[checkedDirection][0];
-                    newTargetY = lastHitY + directions[checkedDirection][1];
-                }
-            }
-            else if (orientation == 'H')
-            {
-                // For horizontal, 2 = "left" and 3 = "right"
-                checkedDirection = (checkedDirection == 2) ? 3 : 2; // Flip between "left" and "right"
-                newTargetX = lastHitX + directions[checkedDirection][0];
-                newTargetY = lastHitY + directions[checkedDirection][1];
-
-                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
-                {
-                    // means we already shot there and should change direction or the spot is outside the grid
-                    checkedDirection = 0; // up
-                    newTargetX = lastHitX + directions[checkedDirection][0];
-                    newTargetY = lastHitY + directions[checkedDirection][1];
-                }
-                if (player.BattleGround[newTargetX][newTargetY] == 5 || player.BattleGround[newTargetX][newTargetY] == 6 || checkBotHitValidity(newTargetX, newTargetY) == false)
-                {
-                    // means we already shot there and should change direction or the spot is outside the grid
-                    checkedDirection = 1; // down
-                    newTargetX = lastHitX + directions[checkedDirection][0];
-                    newTargetY = lastHitY + directions[checkedDirection][1];
-                }
-            }
-        }
-
-        printf("shooting at %d%d", newTargetX, newTargetY);
-
-        if (player.BattleGround[newTargetX][newTargetY] >= 1 && player.BattleGround[newTargetX][newTargetY] <= 4) // hit
-        {
-            player.BattleGround[newTargetX][newTargetY] = 5;
-            lastSpotHitIndex++;
-            alreadyHitSpots[lastSpotHitIndex][0] = newTargetX;
-            alreadyHitSpots[lastSpotHitIndex][1] = newTargetY;
-            adjacentHitSpots[numAdjacentHitSpots][0] = newTargetX; // saving potential adjacent ship spots
-            adjacentHitSpots[numAdjacentHitSpots][1] = newTargetY;
-            if (!are_adjacent_ships) // means we didn't get our adjacent ships yet
-            {
-                numAdjacentHitSpots++;
-            }
-            correctDirection = true;
-            NumSpotsHitAttackingMode++;
-            printf("Hit!\n\n");
-        }
-        else // miss
-        {
-            if (correctDirection2 == true && correctDirection == true)
-            {
-                are_adjacent_ships = true;
-                // means we targeted in both directions but didnt destroy a ship which means we
-                // targeted parts of different ships
-                correctDirection2 = false;
-                correctDirection = false;
-            }
-            else if (correctDirection == true) // means the direction was right but we could have started hitting the ship in the middle which is why we are missing now so we have to go the opposite direction now
-            {
-                correctDirection2 = true; // we are targeting in the opposite direction of the first direction
-                lastSpotHitIndex = 0;     // we return to the first spot we had hit on the ship
-                if (orientation == 'V')
-                {
-                    // For vertical, 0 = "up" and 1 = "down"
-                    checkedDirection = (checkedDirection == 0) ? 1 : 0; // Flip between "up" and "down"
-                }
-                else if (orientation == 'H')
-                {
-                    // For horizontal, 2 = "left" and 3 = "right"
-                    checkedDirection = (checkedDirection == 2) ? 3 : 2; // Flip between "left" and "right"
-                }
-            }
-            else
-            {
-                checkedDirection++; // we try new direction
-                correctDirection = false;
-            }
-            player.BattleGround[newTargetX][newTargetY] = 6;
-            printf("Miss!\n\n");
-        }
-    }
-    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
-}
-
-void MediumBotSmokeScreen(int heatmap[10][10])
-{
-    int max1 = 0;
-    int max2 = 0;
-    int max3 = 0;
-    int x;
-    int y;
-    for (int i = 0; i < 10; i++)
-    {
-        for (int j = 0; j < 10; j++)
-        {
-            int sum = 0;
-            for (int m = i; m <= i + 1 && m < 10; m++)
-            {
-                for (int n = j; n <= j + 1 && n < 10; n++)
-                {
-                    sum = sum + heatmap[m][n];
-                }
-            }
-            if (sum >= max3)
-            {
-                if (sum >= max2)
-                {
-                    if (sum >= max1)
-                    {
-                        max3 = max2;
-                        max2 = max1;
-                        max1 = sum;
-                    }
-                    else
-                    {
-                        max3 = max2;
-                        max2 = sum;
-                    }
-                }
-                else
-                {
-                    max3 = sum;
-                }
-            }
-        }
-    }
-    for (int i = 0; i < 10; i++)
-    {
-        for (int j = 0; j < 10; j++)
-        {
-            int sum = 0;
-            for (int m = i; m <= i + 1 && m < 10; m++)
-            {
-                for (int n = j; n <= j + 1 && n < 10; n++)
-                {
-                    sum = sum + heatmap[m][n];
-                    if (sum == max3)
-                    {
-                        x = i;
-                        y = j;
-                    }
-                }
-            }
-        }
-    }
-    bot.number_obscured_positions = 0;
-    for (int i = x; i <= x + 1 && i < 10; i++)
-    {
-        for (int j = y; j <= y + 1 && j < 10; j++)
-        {
-            sprintf(bot.obscured_areas[bot.number_obscured_positions], "%d%d", i, j);
-            bot.number_obscured_positions++;
-        }
-    }
-
-    bot.smoke_screens--;
-    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
-}
-void MediumBotArtillery(int heatmap[10][10])
-{
-    int max1 = 0;
-    int max2 = 0;
-    int max3 = 0;
-    int x;
-    int y;
-    for (int i = 0; i < 10; i++)
-    {
-        for (int j = 0; j < 10; j++)
-        {
-            int sum = 0;
-            for (int m = i; m <= i + 1 && m < 10; m++)
-            {
-                for (int n = j; n <= j + 1 && n < 10; n++)
-                {
-                    sum = sum + heatmap[m][n];
-                }
-            }
-            if (sum >= max3)
-            {
-                if (sum >= max2)
-                {
-                    if (sum >= max1)
-                    {
-                        max3 = max2;
-                        max2 = max1;
-                        max1 = sum;
-                    }
-                    else
-                    {
-                        max3 = max2;
-                        max2 = sum;
-                    }
-                }
-                else
-                {
-                    max3 = sum;
-                }
-            }
-        }
-    }
-    for (int i = 0; i < 10; i++)
-    {
-        for (int j = 0; j < 10; j++)
-        {
-            int sum = 0;
-            for (int m = i; m <= i + 1 && m < 10; m++)
-            {
-                for (int n = j; n <= j + 1 && n < 10; n++)
-                {
-                    sum = sum + heatmap[m][n];
-                    if (sum == max3)
-                    {
-                        x = i;
-                        y = j;
-                    }
-                }
-            }
-        }
-    }
-    for (int i = x; i <= x + 1 && i < 10; i++)
-    {
-        for (int j = y; j <= y + 1 && j < 10; j++)
-        {
-            if (player.BattleGround[i][j] != 0 && player.BattleGround[i][j] != 5 && player.BattleGround[i][j] != 6)
-            {
-                player.BattleGround[i][j] = 5;
-                lastSpotHitIndex++;
-                alreadyHitSpots[lastSpotHitIndex][0] = i;
-                alreadyHitSpots[lastSpotHitIndex][1] = j;
-                inAttackingMode = true;
-            }
-            else if (player.BattleGround[i][j] == 0)
-            {
-                player.BattleGround[i][j] = 6;
-            }
-        }
-    }
-    bot.destroyedAShipInPreviousTurn = 0;
-    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
-}
-void MediumBotTorpedo(int heatmap[10][10])
-{
-    int maxRowSum1 = 0, maxRowSum2 = 0, maxRowSum3 = 0, maxRowIdx = -1;
-    int maxColSum1 = 0, maxColSum2 = 0, maxColSum3 = 0, maxColIdx = -1;
-    bool hit = false;
-
-    // Calculate row sums
-    for (int i = 0; i < 10; i++)
-    {
-        int rowSum = 0;
-        for (int j = 0; j < 10; j++)
-        {
-            rowSum += heatmap[i][j];
-        }
-        if (rowSum >= maxRowSum3)
-        {
-            if (rowSum >= maxRowSum2)
-            {
-                if (rowSum >= maxRowSum1)
-                {
-                    maxRowSum3 = maxRowSum2;
-                    maxRowSum2 = maxRowSum1;
-                    maxRowSum1 = rowSum;
-                }
-                else
-                {
-                    maxRowSum3 = maxRowSum2;
-                    maxRowSum2 = rowSum;
-                }
-            }
-            else
-            {
-                maxRowSum3 = rowSum;
-            }
-        }
-    }
-
-    // Calculate column sums
-    for (int j = 0; j < 10; j++)
-    {
-        int colSum = 0;
-        for (int i = 0; i < 10; i++)
-        {
-            colSum += heatmap[i][j];
-        }
-        if (colSum >= maxColSum3)
-        {
-            if (colSum >= maxColSum2)
-            {
-                if (colSum >= maxColSum1)
-                {
-                    maxColSum3 = maxColSum2;
-                    maxColSum2 = maxColSum1;
-                    maxColSum1 = colSum;
-                }
-                else
-                {
-                    maxColSum3 = maxColSum2;
-                    maxColSum2 = colSum;
-                }
-            }
-            else
-            {
-                maxColSum3 = colSum;
-            }
-        }
-    }
-    for (int i = 0; i < 10; i++)
-    {
-        int rowSum = 0;
-        for (int j = 0; j < 10; j++)
-        {
-            rowSum += heatmap[i][j];
-        }
-        if (rowSum == maxRowSum3)
-        {
-            maxRowIdx = i;
-        }
-    }
-    for (int j = 0; j < 10; j++)
-    {
-        int colSum = 0;
-        for (int i = 0; i < 10; i++)
-        {
-            colSum += heatmap[i][j];
-        }
-        if (colSum == maxColSum3)
-        {
-            maxRowIdx = j;
-        }
-    }
-    if (maxRowSum3 >= maxColSum3)
-    {
-        for (int i = 0; i < 10; i++)
-        {
-            if (player.BattleGround[maxRowIdx][i] >= 1 && player.BattleGround[maxRowIdx][i] <= 4)
-            {
-                player.BattleGround[maxRowIdx][i] = 5; // 5 means hit
-                hit = true;
-            }
-            else if (player.BattleGround[maxRowIdx][i] == 0)
-            {
-                player.BattleGround[maxRowIdx][i] = 6; // 6 means miss
-            }
-        }
-    }
-
-    else
-    {
-        for (int i = 0; i < 10; i++)
-        {
-            if (player.BattleGround[i][maxColIdx] >= 1 && player.BattleGround[i][maxColIdx] <= 4)
-            {
-                player.BattleGround[i][maxColIdx] = 5; // 5 means hit
-                hit = true;
-            }
-            else if (player.BattleGround[i][maxColIdx] == 0)
-            {
-                player.BattleGround[i][maxColIdx] = 6; // 6 means miss
-            }
-        }
-    }
-
-    if (hit)
-    {
-        printf("Hit!\n");
-    }
-    else
-    {
-        printf("Miss!\n");
-    }
-
-    bot.torpedoUnlocked = false;
-    player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
 }
