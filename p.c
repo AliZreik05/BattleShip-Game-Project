@@ -1195,9 +1195,9 @@ void HardBotRadarSweep(int heatmap[10][10])
         {
             int sum = 0;
             // Calculate sum of the 2x2 grid
-            for (int m = i; m <= i + 1; m++)
+            for (int m = i; m <= i + 1 && m < 10; m++)
             {
-                for (int n = j; n <= j + 1; n++)
+                for (int n = j; n <= j + 1 && n < 10; n++)
                 {
                     sum += heatmap[m][n];
                 }
@@ -2030,6 +2030,7 @@ void MediumBotRadarSweep(int heatmap[10][10])
     player.number_obscured_positions = 0; // this is because the effect of smoke screen which the player potentially used expired after a turn
     printf("\n");
 }
+
 void MediumBotFire(const int heatmap[10][10])
 {
     if (inAttackingMode == false)
